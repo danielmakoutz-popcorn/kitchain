@@ -6,20 +6,25 @@ The engineering evidence includes structured API/data models, image-intake paths
 
 **Current work:** [scanner polish and upgrade review](docs/UPGRADE_REVIEW.md), including validation and remaining device checks. The [earlier validation record](docs/VALIDATION.md) is retained as historical evidence.
 
+To try the branch and understand when to merge it, use [the PR #1 walkthrough](docs/TRY_PR.md).
+
 ## Architecture and current status
 
 | Component | Responsibility | Status / source |
 | --- | --- | --- |
 | Mobile screens | Recipe list/detail, manual creation, photo selection and extraction review | [app/app/(recipes)](app/app/%28recipes%29); implemented in source |
 | API client | API-base configuration, JSON requests, response-status checks | [app/lib/api.ts](app/lib/api.ts); device integration not tested here |
-| Recipe API | CRUD records, photo upload/resize, scan intake | [backend/app/api/v1/recipes.py](backend/app/api/v1/recipes.py); source inspection |
-| Data models | Recipes, users, scan records and handwriting profiles | [backend/app/models](backend/app/models); database integration not tested here |
+| Recipe API | CRUD, image intake and attaching scan photos | [recipe routes](backend/app/api/v1/recipes.py); synthetic API/SQLite/image tests passed |
+| Data models | Recipes, users, scan records, profiles and scan-to-recipe links | [models](backend/app/models); temporary SQLite integration tested |
 | Historical text helper | Split extracted text into title, ingredients and steps | [ocr_parser.py](backend/app/services/ocr_parser.py); synthetic checks retained, no active OCR engine |
 | Recognition | One local Ollama/Qwen recipe reader; legacy Tesseract and PaddleOCR paths removed | [vision service](backend/app/services/ollama_recipe_vision.py); no accuracy benchmark |
 | UI feedback and art | Shared button haptics and named slots for final pixel art | [art handoff](docs/PIXEL_ART.md); physical-device verification pending |
+| Drafts and search | Local scan-review recovery, durable draft photos, search/sort | [draft store](app/lib/scan-draft-core.ts), [search](app/lib/recipe-search.ts); pure-module tests passed, device persistence pending |
 | API health | `GET /api/v1/health` | [main.py](backend/app/main.py); fixed liveness response |
 
 The client calls the API for recipe records and image intake. The API stores structured records in SQLite and images in local directories. The photo scanner asks the local `qwen2.5vl:3b` model for recipe fields and uncertain words; the UI lets a user review them. Successful AI responses now persist a scan ID, raw output, review hints, and parsed fields before returning. Reviewed corrections are stored separately; they do not automatically train or change the model.
+
+Unfinished photo reviews autosave on the device, scoped to the API server. Native photo drafts use a document-directory copy; the browser uses IndexedDB. Saving a scanned recipe attaches its retained source image, and retries for the same scan reuse the existing recipe. Search covers titles, descriptions and ingredients, with newest/oldest/A–Z sorting.
 
 ## Run the verified offline checks
 
@@ -75,9 +80,10 @@ python scripts/validate_local.py
 cd app
 npx tsc --noEmit
 npm run lint
+npm test
 ```
 
-The API tests use temporary SQLite/media storage and synthetic images, mocking only the model HTTP response. They check persistence, corrections, errors, and responsiveness; they do not measure handwriting accuracy. Haptic feel requires a physical device.
+The 16 API tests use temporary SQLite/media storage and synthetic images, mocking only the model HTTP response. They check persistence, corrections, errors, photo attachment, save retries and responsiveness. Ten pure TypeScript-module tests cover draft serialization/ordering and recipe search. Neither suite measures handwriting accuracy or tests physical haptic feel.
 
 ## Operation and limitations
 
@@ -89,8 +95,8 @@ The API tests use temporary SQLite/media storage and synthetic images, mocking o
 
 Registered recipe/scan routes do not currently enforce user authentication. Security helper files and user models are scaffolding, not proof of access control. Local startup creates tables with `create_all`; migration directories exist, but migration execution was not validated.
 
-The tree currently includes local media under `backend/data`; those files are not a validated test dataset. Database and photo recovery have not been exercised. See the [validation record](docs/VALIDATION.md) for a small future API/device checklist.
+The tree currently includes local media under `backend/data`; those files are not a validated test dataset. Database backup/restore and disaster recovery have not been exercised. See the [current review](docs/UPGRADE_REVIEW.md) for device checks and validation limits.
 
 ## Next improvements
 
-Integrate Daniel's completed art using [the asset map](docs/PIXEL_ART.md), then perform the [device checklist](docs/UPGRADE_REVIEW.md). Small optional follow-ups include draft recovery, attaching the scanned source photo to the saved recipe, and recipe-list search. Auth enforcement, migration/recovery validation, and CI remain separate future work.
+Integrate Daniel's completed art using [the asset map](docs/PIXEL_ART.md), then perform the [device checklist](docs/UPGRADE_REVIEW.md). Draft recovery, original-photo attachment and recipe search are included in this branch. Auth enforcement, migration/recovery validation, and CI remain separate future work.

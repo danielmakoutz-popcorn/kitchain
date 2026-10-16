@@ -25,3 +25,10 @@ class RecipeScan(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ScanRecipeLink(SQLModel, table=True):
+    """A scan creates one recipe, including when a recovered draft retries a save."""
+
+    scan_id: int = Field(primary_key=True, foreign_key="recipescan.id")
+    recipe_id: int = Field(foreign_key="recipe.id", unique=True, index=True)

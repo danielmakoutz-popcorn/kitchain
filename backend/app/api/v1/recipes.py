@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from sqlmodel import Session, select
 from backend.app.db.session import engine
 from backend.app.models.recipe import Recipe
-from backend.app.models.scan import RecipeScan
+from backend.app.models.scan import RecipeScan, ScanRecipeLink
+from sqlalchemy.exc import IntegrityError
 from backend.app.models.handwriting_profile import HandwritingProfile
 from backend.app.services.ollama_recipe_vision import read_recipe_with_ollama
 from fastapi import Query
@@ -12,6 +13,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pathlib import Path
 from typing import Literal
 import logging
+import shutil
 import uuid
 import requests
 
@@ -27,13 +29,62 @@ logger = logging.getLogger(__name__)
 MAX_SCAN_BYTES = 20 * 1024 * 1024
 
 
+def _saved_scan_recipe(session: Session, scan_id: int, proposed: Recipe) -> Recipe | None:
+    link = session.get(ScanRecipeLink, scan_id)
+    saved = session.get(Recipe, link.recipe_id) if link else None
+    if saved:
+        fields = ("title", "description", "ingredients", "steps", "instructions", "handwriting_profile_id")
+        if any(getattr(saved, name) != getattr(proposed, name) for name in fields):
+            raise HTTPException(status_code=409, detail=f'This scan already created "{saved.title}". Open that recipe from your list to edit it; your draft has been kept.')
+    return saved
+
+
 @router.post("/", response_model=Recipe)
-def create_recipe(recipe: Recipe):
+def create_recipe(recipe: Recipe, source_scan_id: int | None = Query(default=None, gt=0)):
     with Session(engine) as session:
-        session.add(recipe)
-        session.commit()
-        session.refresh(recipe)
-        return recipe
+        source = None
+        if source_scan_id is not None:
+            saved_recipe = _saved_scan_recipe(session, source_scan_id, recipe)
+            if saved_recipe:
+                return saved_recipe
+            scan = session.get(RecipeScan, source_scan_id)
+            if not scan:
+                raise HTTPException(status_code=404, detail="The source scan was not found. Your draft has been kept.")
+            source = Path(scan.image_path).resolve() if scan.image_path else None
+            upload_dir = Path("backend/data/uploads").resolve()
+            if not source or not source.is_relative_to(upload_dir) or not source.is_file():
+                raise HTTPException(status_code=409, detail="The original scan photo is unavailable. Restore the photo on the server or scan again; your draft has been kept.")
+
+        attached_photo = None
+        committed = False
+        try:
+            session.add(recipe)
+            if source is not None:
+                session.flush()
+                directory = Path("backend/data/recipe_photos")
+                directory.mkdir(parents=True, exist_ok=True)
+                attached_photo = directory / f"recipe_{recipe.id}_{uuid.uuid4().hex}.jpg"
+                # Copy the retained source, not the smaller AI thumbnail. The recipe owns its copy.
+                shutil.copyfile(source, attached_photo)
+                recipe.image_path = f"/recipe_photos/{attached_photo.name}"
+                session.add(ScanRecipeLink(scan_id=source_scan_id, recipe_id=recipe.id))
+            session.commit()
+            committed = True
+            session.refresh(recipe)
+            return recipe
+        except Exception as error:
+            session.rollback()
+            if attached_photo is not None and not committed:
+                attached_photo.unlink(missing_ok=True)
+            # A concurrent retry can race the first insert. The unique scan link selects the winner.
+            if isinstance(error, IntegrityError) and source_scan_id is not None:
+                saved_recipe = _saved_scan_recipe(session, source_scan_id, recipe)
+                if saved_recipe:
+                    return saved_recipe
+            logger.exception("Could not save recipe with its source photo")
+            if committed:
+                raise HTTPException(status_code=500, detail="The recipe was saved, but its response could not be loaded. Check the recipe list before saving again.")
+            raise HTTPException(status_code=500, detail="Could not save this recipe and its photo. Please try again.")
 
 
 @router.get("/", response_model=list[Recipe])
@@ -116,6 +167,10 @@ def delete_recipe(recipe_id: int):
         if not recipe:
             raise HTTPException(status_code=404, detail="Recipe not found")
 
+        link = session.exec(select(ScanRecipeLink).where(ScanRecipeLink.recipe_id == recipe_id)).first()
+        if link:
+            session.delete(link)
+            session.flush()
         session.delete(recipe)
         session.commit()
         return {"ok": True, "deleted_id": recipe_id}

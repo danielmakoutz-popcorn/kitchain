@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from threading import Event
+from threading import Barrier, Event
 import unittest
 from unittest.mock import Mock, patch
 
@@ -33,6 +33,8 @@ class PhotoScanningTests(unittest.TestCase):
         from backend.app.db.session import engine
         from backend.app.api.v1 import recipes
         cls.engine = engine
+        from sqlalchemy import event
+        event.listen(engine, "connect", lambda connection, _: connection.execute("PRAGMA foreign_keys=ON"))
         expected_db = Path(cls.storage.name) / "test.db"
         if Path(engine.url.database).resolve() != expected_db.resolve():
             raise RuntimeError("Refusing to run integration checks outside temporary storage")
@@ -194,6 +196,88 @@ class PhotoScanningTests(unittest.TestCase):
             self.assertEqual(image.size, (1600, 800))
         self.assertEqual(self.client.delete(path).status_code, 200)
         self.assertEqual(self.client.get(path).status_code, 404)
+
+    def test_scanned_recipe_automatically_keeps_its_own_source_photo(self):
+        with patch.object(vision.requests, "post", return_value=self.model_response()):
+            scan = self.scan().json()
+        source = self.client.get(f"/api/v1/scans/{scan['scan_id']}").json()
+        source_path = Path(source["image_path"])
+        source_bytes = source_path.read_bytes()
+        created = self.client.post(f"/api/v1/recipes/?source_scan_id={scan['scan_id']}", json={
+            "title": "Reviewed Soup", "ingredients": scan["ingredients"], "steps": scan["steps"],
+        })
+        self.assertEqual(created.status_code, 200, created.text)
+        recipe = created.json()
+        self.assertTrue(recipe["image_path"].startswith("/recipe_photos/"))
+        self.assertEqual(self.client.get(recipe["image_path"]).content, source_bytes)
+        # Recipe photo survives independently of the retained scan/draft source.
+        source_path.unlink()
+        self.assertEqual(self.client.get(recipe["image_path"]).content, source_bytes)
+        self.assertEqual(self.client.get(f"/api/v1/recipes/{recipe['id']}").json()["title"], "Reviewed Soup")
+
+    def test_missing_scan_or_source_photo_does_not_create_a_partial_recipe(self):
+        missing = self.client.post("/api/v1/recipes/?source_scan_id=999", json={"title": "Draft"})
+        self.assertEqual(missing.status_code, 404)
+        with patch.object(vision.requests, "post", return_value=self.model_response()):
+            scan = self.scan().json()
+        source = self.client.get(f"/api/v1/scans/{scan['scan_id']}").json()
+        Path(source["image_path"]).unlink()
+        missing_photo = self.client.post(f"/api/v1/recipes/?source_scan_id={scan['scan_id']}", json={"title": "Draft"})
+        self.assertEqual(missing_photo.status_code, 409)
+        self.assertEqual(self.client.get("/api/v1/recipes/").json(), [])
+
+    def test_photo_copy_failure_rolls_back_recipe_and_removes_partial_image(self):
+        with patch.object(vision.requests, "post", return_value=self.model_response()):
+            scan = self.scan().json()
+        def failed_copy(source, destination):
+            Path(destination).write_bytes(b"partial")
+            raise OSError("Synthetic storage failure")
+        with patch.object(self.routes.shutil, "copyfile", side_effect=failed_copy), self.assertLogs(self.routes.logger, level="ERROR"):
+            response = self.client.post(f"/api/v1/recipes/?source_scan_id={scan['scan_id']}", json={"title": "Draft"})
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(self.client.get("/api/v1/recipes/").json(), [])
+        self.assertFalse(list(Path("backend/data/recipe_photos").glob("*.jpg")))
+
+    def test_recovered_scan_save_returns_the_same_recipe_after_a_retry(self):
+        with patch.object(vision.requests, "post", return_value=self.model_response()):
+            scan = self.scan().json()
+        path = f"/api/v1/recipes/?source_scan_id={scan['scan_id']}"
+        first = self.client.post(path, json={"title": "Already saved"})
+        self.assertEqual(first.status_code, 200, first.text)
+        source = self.client.get(f"/api/v1/scans/{scan['scan_id']}").json()
+        Path(source["image_path"]).unlink()
+        second = self.client.post(path, json={"title": "Already saved"})
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(second.json()["id"], first.json()["id"])
+        self.assertEqual(second.json()["title"], "Already saved")
+        self.assertEqual(len(self.client.get("/api/v1/recipes/").json()), 1)
+        self.assertEqual(len(list(Path("backend/data/recipe_photos").glob("*.jpg"))), 1)
+        changed_draft = self.client.post(path, json={"title": "Different unsaved edits"})
+        self.assertEqual(changed_draft.status_code, 409)
+        self.assertIn("draft has been kept", changed_draft.json()["detail"])
+        self.assertEqual(self.client.get(f"/api/v1/recipes/{first.json()['id']}").json()["title"], "Already saved")
+        self.assertEqual(self.client.delete(f"/api/v1/recipes/{first.json()['id']}").status_code, 200)
+
+    def test_overlapping_scan_save_retries_create_one_recipe_and_photo(self):
+        with patch.object(vision.requests, "post", return_value=self.model_response()):
+            scan = self.scan().json()
+        path = f"/api/v1/recipes/?source_scan_id={scan['scan_id']}"
+        from sqlmodel import Session
+        from backend.app.models.scan import ScanRecipeLink
+        gate = Barrier(2)
+        original_get = Session.get
+        def overlapping_get(session, model, identity, *args, **kwargs):
+            result = original_get(session, model, identity, *args, **kwargs)
+            if model is ScanRecipeLink and result is None:
+                gate.wait(timeout=3)  # Both requests must observe "not saved" before either inserts.
+            return result
+        with patch.object(Session, "get", new=overlapping_get), ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(self.client.post, path, json={"title": "Concurrent save"}) for _ in range(2)]
+            results = [future.result(timeout=5) for future in futures]
+        self.assertTrue(all(response.status_code == 200 for response in results), [r.text for r in results])
+        self.assertEqual(results[0].json()["id"], results[1].json()["id"])
+        self.assertEqual(len(self.client.get("/api/v1/recipes/").json()), 1)
+        self.assertEqual(len(list(Path("backend/data/recipe_photos").glob("*.jpg"))), 1)
 
 
 if __name__ == "__main__":

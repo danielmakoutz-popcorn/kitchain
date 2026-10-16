@@ -66,7 +66,10 @@ Open on your phone via Expo Go (same Wi‑Fi as the backend).
 - `GET /api/v1/recipes/` → list of recipes
 - `GET /api/v1/recipes/{id}` → single recipe
 - `POST /api/v1/recipes/` → create recipe
+- `POST /api/v1/recipes/?source_scan_id={scan_id}` → create with retained source photo; retry the same import without creating another recipe
 - `PATCH /api/v1/scans/{scan_id}/correction` → store the reviewed correction record
 
 The photo screen now uses only the existing local Qwen AI reader; printed/Tesseract scanning and the PaddleOCR fallback are removed. Haptic controls use the already installed `expo-haptics` dependency. See [current review and validation](../docs/UPGRADE_REVIEW.md) and [pixel-art integration](../docs/PIXEL_ART.md).
+
+Photo review fields and the selected image autosave locally for recovery. The recipe list searches names, descriptions and ingredients and supports Newest/Oldest/A–Z sorting. Run `npm ci` after checking out this branch to install its locked AsyncStorage/FileSystem dependencies, then use `npm test` for the draft/search module checks. See [the PR walkthrough](../docs/TRY_PR.md) for the complete checkout/run/merge steps.
 
