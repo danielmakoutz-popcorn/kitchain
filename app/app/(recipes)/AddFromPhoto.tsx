@@ -1,355 +1,249 @@
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useState } from "react";
-import { View, Text, Pressable, Image, Alert, ScrollView, TextInput } from "react-native";
-import Constants from "expo-constants";
+import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { router } from "expo-router";
+import { HapticPressable } from "@/components/HapticPressable";
+import { ArtSlot } from "@/components/ArtSlot";
+import { requestJson } from "@/lib/api";
+import { feedback } from "@/lib/haptics";
+import { photoForm } from "@/lib/photos";
+import { ScanResponseSchema, type ScanResponse } from "@/lib/types";
 
-const BASE =
-  (Constants.expoConfig as any)?.extra?.apiBase ??
-  process.env.EXPO_PUBLIC_API_BASE ??
-  "http://192.168.x.x:8000";
-
-type ScanMode = "printed" | "handwritten";
-type HandwritingProfile = {
-  id: number;
-  name: string;
-  relationship?: string | null;
-};
-
-function ingredientToText(item: any): string {
-  if (typeof item === "string") return item.trim();
-
-  if (item && typeof item === "object") {
-    const name = String(item.name || "").trim();
-    const quantity = String(item.quantity || "").trim();
-
-    if (name && quantity) {
-      const nameLooksLikeItAlreadyHasAmount =
-        /^\s*\d|^\s*[¼½¾⅓⅔⅛⅜⅝⅞]/.test(name);
-
-      // If Qwen put the amount inside name, trust name and don't duplicate quantity.
-      if (nameLooksLikeItAlreadyHasAmount) {
-        return name;
-      }
-
-      return `${quantity} ${name}`.trim();
-    }
-
-    return name || quantity;
-  }
-
-  return "";
-}
+type HandwritingProfile = { id: number; name: string };
+const fieldStyle = { borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10 };
+const buttonStyle = { backgroundColor: "#eee", padding: 12, borderRadius: 10 };
 
 export default function AddFromPhoto() {
-  const [uri, setUri] = useState<string | null>(null);
-  const [text, setText] = useState<string>("");
-  const [title, setTitle] = useState<string>("");
-  const [ingredientsText, setIngredientsText] = useState<string>("");
-  const [stepsText, setStepsText] = useState<string>("");
-  const [notesText, setNotesText] = useState<string>("");
-
-  const [scanMode, setScanMode] = useState<ScanMode>("printed");
+  const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [result, setResult] = useState<ScanResponse | null>(null);
+  const [title, setTitle] = useState("");
+  const [ingredientsText, setIngredientsText] = useState("");
+  const [stepsText, setStepsText] = useState("");
+  const [notesText, setNotesText] = useState("");
   const [profiles, setProfiles] = useState<HandwritingProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
-  const [newProfileName, setNewProfileName] = useState<string>("");
-
-  const [scanId, setScanId] = useState<number | null>(null);
-  const [confidence, setConfidence] = useState<string>("");
-  const [uncertainLines, setUncertainLines] = useState<string[]>([]);
+  const [newProfileName, setNewProfileName] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [scanError, setScanError] = useState("");
+  const [showRaw, setShowRaw] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [creatingProfile, setCreatingProfile] = useState(false);
+  const scanController = useRef<AbortController | null>(null);
+  const saveLock = useRef(false);
+  const profileLock = useRef(false);
+  const busy = scanning || saving || creatingProfile;
 
   useEffect(() => {
-    loadProfiles();
+    void loadProfiles();
+    return () => { scanController.current?.abort(); scanController.current = null; };
   }, []);
 
   async function loadProfiles() {
     try {
-      const res = await fetch(`${BASE}/api/v1/handwriting-profiles/`);
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const data = await res.json();
-      setProfiles(data || []);
-    } catch (e) {
-      // Keep this quiet so scanning still works if profiles endpoint is offline.
-      console.log("Profile load error", e);
+      setProfiles(await requestJson<HandwritingProfile[]>("/api/v1/handwriting-profiles/"));
+      setProfileError("");
+    } catch {
+      setProfileError("Writer profiles are unavailable. You can still scan with Unknown selected.");
     }
   }
 
   async function createProfile() {
+    if (profileLock.current || scanController.current || saveLock.current) return;
     const name = newProfileName.trim();
     if (!name) return Alert.alert("Profile name required");
-
+    profileLock.current = true;
+    setCreatingProfile(true);
     try {
-      const res = await fetch(`${BASE}/api/v1/handwriting-profiles/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+      const profile = await requestJson<HandwritingProfile>("/api/v1/handwriting-profiles/", {
+        method: "POST", body: JSON.stringify({ name }),
       });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const profile = await res.json();
       setProfiles((prev) => [...prev, profile]);
       setSelectedProfileId(profile.id);
       setNewProfileName("");
-    } catch (e: any) {
-      Alert.alert("Profile error", String(e?.message || e));
+      feedback("success");
+    } catch (error) {
+      feedback("error");
+      Alert.alert("Profile error", error instanceof Error ? error.message : "Could not add this writer.");
+    } finally {
+      profileLock.current = false;
+      setCreatingProfile(false);
     }
   }
 
   async function pickImage() {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
-    if (!res.canceled) setUri(res.assets[0].uri);
+    if (busy) return;
+    try {
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 });
+      if (picked.canceled || !picked.assets[0]) return;
+      const replace = () => {
+        setPhoto(picked.assets[0]);
+        setResult(null);
+        setTitle(""); setIngredientsText(""); setStepsText(""); setNotesText("");
+        setScanError(""); setShowRaw(false);
+      };
+      if (result) {
+        Alert.alert("Replace this scan?", "Your unsaved review will be cleared when you choose another photo.", [
+          { text: "Keep review", style: "cancel" }, { text: "Replace photo", onPress: replace },
+        ]);
+      } else replace();
+    } catch (error) {
+      feedback("error");
+      Alert.alert("Photo error", error instanceof Error ? error.message : "Could not open your photos.");
+    }
   }
 
   async function scan() {
-    if (!uri) return Alert.alert("Pick an image first");
-
+    if (!photo || scanController.current || saveLock.current || profileLock.current) return;
+    const controller = new AbortController();
+    scanController.current = controller;
     setScanning(true);
-
+    setScanError("");
+    const timeout = setTimeout(() => controller.abort(), 330_000);
     try {
-      const form = new FormData();
-      // @ts-ignore React Native file object for FormData
-      form.append("file", {
-        uri,
-        name: "recipe.jpg",
-        type: "image/jpeg",
+      const params = new URLSearchParams({ mode: "handwritten" });
+      if (selectedProfileId !== null) params.set("handwriting_profile_id", String(selectedProfileId));
+      const form = await photoForm(photo);
+      const data = await requestJson<unknown>(`/api/v1/recipes/scan?${params}`, {
+        method: "POST", body: form, signal: controller.signal,
       });
-
-      const params = new URLSearchParams({ mode: scanMode });
-      if (selectedProfileId) params.append("handwriting_profile_id", String(selectedProfileId));
-
-      const res = await fetch(`${BASE}/api/v1/recipes/scan?${params.toString()}`, {
-        method: "POST",
-        body: form,
-      });
-
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-
-      const data = await res.json();
-
-      setScanId(data?.scan_id ?? null);
-      setConfidence(data?.confidence || "");
-      setUncertainLines(data?.uncertain_lines || []);
-      setTitle((data?.title || "").slice(0, 80));
-      setText(data?.raw_text || "");
-
-      const ingredients = (data?.ingredients || [])
-        .map(ingredientToText)
-        .filter(Boolean);
-
-      setIngredientsText(ingredients.join("\n"));
-      setStepsText((data?.steps || []).join("\n"));
-      setNotesText((data?.notes || []).join("\n"));
-    } catch (e: any) {
-      Alert.alert("Scan error", String(e?.message || e));
+      if (scanController.current !== controller) return;
+      const parsed = ScanResponseSchema.safeParse(data);
+      if (!parsed.success) throw new Error("The server returned an unreadable scan. Try scanning again.");
+      setResult(parsed.data);
+      setTitle(parsed.data.title);
+      setIngredientsText(parsed.data.ingredients.join("\n"));
+      setStepsText(parsed.data.steps.join("\n"));
+      setNotesText(parsed.data.notes.join("\n"));
+      setShowRaw(false);
+      feedback(parsed.data.uncertain_lines.length ? "warning" : "success");
+    } catch (error) {
+      if (scanController.current !== controller) return;
+      setScanError(controller.signal.aborted ? "This scan took too long. You can try again."
+        : error instanceof Error ? error.message : "Could not scan this photo. Try again.");
+      feedback("error");
     } finally {
-      setScanning(false);
+      clearTimeout(timeout);
+      if (scanController.current === controller) {
+        scanController.current = null;
+        setScanning(false);
+      }
     }
   }
 
-  async function saveCorrectionForLearning(ingredients: string[], steps: string[]) {
-    if (!scanId) return;
+  function requestScan() {
+    if (result) {
+      Alert.alert("Scan this photo again?", "A successful new scan will replace your current edits.", [
+        { text: "Keep review", style: "cancel" }, { text: "Scan again", onPress: () => void scan() },
+      ]);
+    } else void scan();
+  }
 
-    try {
-      await fetch(`${BASE}/api/v1/scans/${scanId}/correction`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          ingredients,
-          steps,
-          handwriting_profile_id: selectedProfileId,
-        }),
-      });
-    } catch (e) {
-      console.log("Correction save error", e);
-    }
+  function cancelScan() {
+    scanController.current?.abort();
+    scanController.current = null;
+    setScanning(false);
+    setScanError("Stopped waiting for this scan. Your local AI may finish in the background.");
   }
 
   async function saveAsRecipe() {
+    if (!result || saveLock.current || scanController.current || profileLock.current) return;
     if (!title.trim()) return Alert.alert("Title required");
-
-    const ingredients = ingredientsText
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const steps = stepsText
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const notes = notesText
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const stepsWithNotes = [
-      ...steps,
-      ...notes.map((n) => `Note: ${n}`),
-    ];
-
+    saveLock.current = true;
+    setSaving(true);
+    const toLines = (text: string) => text.split("\n").map((line) => line.trim()).filter(Boolean);
+    const ingredients = toLines(ingredientsText);
+    const steps = [...toLines(stepsText), ...toLines(notesText).map((note) => `Note: ${note}`)];
+    const payload = { title: title.trim(), ingredients, steps, handwriting_profile_id: selectedProfileId };
     try {
-      const res = await fetch(`${BASE}/api/v1/recipes/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: "Scanned",
-          ingredients,
-          steps: stepsWithNotes,
-          instructions: stepsWithNotes.join("\n\n"),
-          handwriting_profile_id: selectedProfileId,
-        }),
+      const recipe = await requestJson<{ id: number }>("/api/v1/recipes/", {
+        method: "POST", body: JSON.stringify({ ...payload, description: "Scanned", instructions: steps.join("\n\n") }),
       });
-
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      await saveCorrectionForLearning(ingredients, stepsWithNotes);
-      Alert.alert("Saved!", "Recipe created and handwriting corrections stored.");
-    } catch (e: any) {
-      Alert.alert("Save error", String(e?.message || e));
+      let correctionsSaved = true;
+      try {
+        await requestJson(`/api/v1/scans/${result.scan_id}/correction`, { method: "PATCH", body: JSON.stringify(payload) });
+      } catch { correctionsSaved = false; }
+      feedback(correctionsSaved ? "success" : "warning");
+      Alert.alert("Recipe saved", correctionsSaved ? "Your reviewed recipe and correction record were saved."
+        : "Your recipe was saved, but its correction record could not be updated.");
+      router.replace(`/(recipes)/${recipe.id}`);
+    } catch (error) {
+      feedback("error");
+      Alert.alert("Save error", error instanceof Error ? error.message : "Could not save your recipe.");
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
     }
   }
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={{ fontSize: 20, fontWeight: "600" }}>Add from Photo</Text>
-
-      {uri ? <Image source={{ uri }} style={{ width: "100%", height: 240, borderRadius: 10 }} /> : null}
-
-      <Text style={{ fontWeight: "600" }}>Scan type</Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        {(["printed", "handwritten"] as ScanMode[]).map((mode) => (
-          <Pressable
-            key={mode}
-            onPress={() => setScanMode(mode)}
-            style={{
-              backgroundColor: scanMode === mode ? "#1e73ff" : "#eee",
-              padding: 10,
-              borderRadius: 10,
-            }}
-          >
-            <Text style={{ color: scanMode === mode ? "#fff" : "#111", textTransform: "capitalize" }}>
-              {mode}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={{ fontWeight: "600" }}>Who wrote this?</Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        <Pressable
-          onPress={() => setSelectedProfileId(null)}
-          style={{ backgroundColor: selectedProfileId === null ? "#1e73ff" : "#eee", padding: 10, borderRadius: 10 }}
-        >
-          <Text style={{ color: selectedProfileId === null ? "#fff" : "#111" }}>Unknown</Text>
-        </Pressable>
-        {profiles.map((profile) => (
-          <Pressable
-            key={profile.id}
-            onPress={() => setSelectedProfileId(profile.id)}
-            style={{ backgroundColor: selectedProfileId === profile.id ? "#1e73ff" : "#eee", padding: 10, borderRadius: 10 }}
-          >
-            <Text style={{ color: selectedProfileId === profile.id ? "#fff" : "#111" }}>{profile.name}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <TextInput
-          value={newProfileName}
-          onChangeText={setNewProfileName}
-          placeholder="Add person, e.g. Grandma Carol"
-          style={{ flex: 1, borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10 }}
-        />
-        <Pressable onPress={createProfile} style={{ backgroundColor: "#eee", padding: 12, borderRadius: 10 }}>
-          <Text>Add</Text>
-        </Pressable>
-      </View>
-
-      <View style={{ flexDirection: "row", gap: 12 }}>
-        <Pressable onPress={pickImage} style={{ backgroundColor: "#eee", padding: 12, borderRadius: 10 }}>
-          <Text>Pick Image</Text>
-        </Pressable>
-        <Pressable
-          onPress={scan}
-          disabled={scanning}
-          style={{
-            backgroundColor: scanning ? "#93c5fd" : "#1e73ff",
-            padding: 12,
-            borderRadius: 10,
-            opacity: scanning ? 0.8 : 1,
-          }}
-        >
-          <Text style={{ color: "#fff" }}>
-            {scanning ? "Scanning…" : "Scan"}
-          </Text>
-        </Pressable>    
-      </View>
-
-      {scanning ? (
-        <View style={{ backgroundColor: "#eff6ff", padding: 12, borderRadius: 10 }}>
-          <Text style={{ fontWeight: "600" }}>Reading recipe card…</Text>
-          <Text style={{ color: "#555", marginTop: 4 }}>
-            Handwritten scans can take a minute while the local AI model works.
-          </Text>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={80}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 80 }}>
+        <Text style={{ fontSize: 20, fontWeight: "600" }}>Add from Photo</Text>
+        <Text>Choose a clear recipe photo. The local AI will read it, then you can review and edit before saving.</Text>
+        {photo && <Image source={{ uri: photo.uri }} resizeMode="contain" style={{ width: "100%", height: 240, borderRadius: 10 }} accessibilityLabel="Selected recipe photo" />}
+        <Text style={{ fontWeight: "600" }}>Who wrote this? (optional)</Text>
+        {profileError ? <View style={{ gap: 8 }}>
+          <Text>{profileError}</Text>
+          <HapticPressable disabled={busy} onPress={loadProfiles} style={buttonStyle}><Text>Retry profiles</Text></HapticPressable>
+        </View> : null}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {[{ id: null, name: "Unknown" }, ...profiles].map((profile) => (
+            <HapticPressable key={String(profile.id)} haptic="selection" disabled={busy}
+              accessibilityRole="radio" accessibilityState={{ selected: selectedProfileId === profile.id }}
+              onPress={() => setSelectedProfileId(profile.id)}
+              style={{ ...buttonStyle, backgroundColor: selectedProfileId === profile.id ? "#1e73ff" : "#eee" }}>
+              <Text style={{ color: selectedProfileId === profile.id ? "#fff" : "#111" }}>{profile.name}</Text>
+            </HapticPressable>
+          ))}
         </View>
-      ) : null}
-
-      {!!confidence && <Text>Scan confidence: {confidence}</Text>}
-      {uncertainLines.length > 0 && (
-        <Text style={{ color: "#92400e" }}>Needs review: {uncertainLines.join("; ")}</Text>
-      )}
-
-      {!!text && (
-        <>
-          <Text style={{ fontWeight: "600", marginTop: 8 }}>Title</Text>
-          <TextInput
-            value={title}
-            onChangeText={setTitle}
-            style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10 }}
-          />
-
-          <Text style={{ fontWeight: "600", marginTop: 8 }}>Ingredients (one per line)</Text>
-          <TextInput
-            value={ingredientsText}
-            onChangeText={setIngredientsText}
-            multiline
-            style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, minHeight: 120 }}
-          />
-
-          <Text style={{ fontWeight: "600", marginTop: 8 }}>Steps (one per line)</Text>
-          <TextInput
-            value={stepsText}
-            onChangeText={setStepsText}
-            multiline
-            style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, minHeight: 140 }}
-          />
-
-          <Text style={{ fontWeight: "600", marginTop: 8 }}>Notes / Optional Add-ins</Text>
-          <TextInput
-            value={notesText}
-            onChangeText={setNotesText}
-            multiline
-            style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, minHeight: 100 }}
-          />
-
-          <Text style={{ fontWeight: "600", marginTop: 8 }}>OCR Text</Text>
-          <Text style={{ borderWidth: 1, borderColor: "#eee", padding: 10, borderRadius: 8 }}>
-            {text}
-          </Text>
-
-          <Pressable
-            onPress={saveAsRecipe}
-            style={{ backgroundColor: "#16a34a", padding: 14, borderRadius: 10, marginTop: 12 }}
-          >
-            <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>
-              Save Recipe
-            </Text>
-          </Pressable>
-        </>
-      )}
-    </ScrollView>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TextInput value={newProfileName} onChangeText={setNewProfileName} editable={!busy}
+            placeholder="Add person, e.g. Grandma Carol" accessibilityLabel="New writer name" style={{ ...fieldStyle, flex: 1 }} />
+          <HapticPressable disabled={busy || !newProfileName.trim()} onPress={createProfile} style={buttonStyle}>
+            <Text>{creatingProfile ? "Adding…" : "Add"}</Text>
+          </HapticPressable>
+        </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+          <HapticPressable onPress={pickImage} disabled={busy} style={buttonStyle}><Text>{photo ? "Replace photo" : "Pick photo"}</Text></HapticPressable>
+          <HapticPressable onPress={requestScan} disabled={!photo || busy}
+            style={{ ...buttonStyle, backgroundColor: "#1e73ff", flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <ArtSlot name="scanButton" scale={1} />
+            <Text style={{ color: "#fff" }}>{scanning ? "Scanning…" : result ? "Scan again" : "Scan with AI"}</Text>
+          </HapticPressable>
+        </View>
+        {scanning && <View accessibilityLiveRegion="polite" style={{ backgroundColor: "#eff6ff", padding: 12, borderRadius: 10, gap: 8 }}>
+          <ArtSlot name="scanWorking" fallback={<ActivityIndicator accessibilityLabel="Reading recipe" />} />
+          <Text style={{ fontWeight: "600" }}>Reading recipe card…</Text>
+          <Text>The local AI can take a few minutes. Your photo will stay here while you wait.</Text>
+          <HapticPressable haptic="selection" onPress={cancelScan} style={buttonStyle}><Text>Stop waiting</Text></HapticPressable>
+        </View>}
+        {!!scanError && <View accessibilityLiveRegion="polite" style={{ backgroundColor: "#fef2f2", padding: 12, borderRadius: 10, gap: 8 }}>
+          <ArtSlot name="scanError" /><Text style={{ color: "#991b1b" }}>{scanError}</Text>
+        </View>}
+        {result && <>
+          <ArtSlot name="scanReady" />
+          <Text style={{ fontSize: 18, fontWeight: "600" }}>Review your recipe</Text>
+          <Text>Check names, amounts, and cooking times against your photo before saving.</Text>
+          <Text>Review hint: {result.confidence}. This is not an accuracy score.</Text>
+          {result.uncertain_lines.length > 0 && <Text style={{ color: "#92400e" }}>Needs review: {result.uncertain_lines.join("; ")}</Text>}
+          <Text style={{ fontWeight: "600" }}>Title</Text>
+          <TextInput accessibilityLabel="Recipe title" value={title} onChangeText={setTitle} editable={!busy} style={fieldStyle} />
+          <Text style={{ fontWeight: "600" }}>Ingredients (one per line)</Text>
+          <TextInput accessibilityLabel="Recipe ingredients" value={ingredientsText} onChangeText={setIngredientsText} editable={!busy} multiline style={{ ...fieldStyle, minHeight: 120, textAlignVertical: "top" }} />
+          <Text style={{ fontWeight: "600" }}>Steps (one per line)</Text>
+          <TextInput accessibilityLabel="Recipe steps" value={stepsText} onChangeText={setStepsText} editable={!busy} multiline style={{ ...fieldStyle, minHeight: 140, textAlignVertical: "top" }} />
+          <Text style={{ fontWeight: "600" }}>Notes / Optional Add-ins</Text>
+          <TextInput accessibilityLabel="Recipe notes" value={notesText} onChangeText={setNotesText} editable={!busy} multiline style={{ ...fieldStyle, minHeight: 100, textAlignVertical: "top" }} />
+          <HapticPressable haptic="selection" onPress={() => setShowRaw(!showRaw)} style={buttonStyle} accessibilityState={{ expanded: showRaw }}>
+            <Text>{showRaw ? "Hide" : "Show"} original AI response</Text>
+          </HapticPressable>
+          {showRaw && <Text selectable style={fieldStyle}>{result.raw_text || "No raw response provided."}</Text>}
+          <HapticPressable onPress={saveAsRecipe} disabled={busy || !title.trim()} style={{ ...buttonStyle, backgroundColor: "#16a34a", marginTop: 12 }}>
+            <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>{saving ? "Saving…" : "Save Recipe"}</Text>
+          </HapticPressable>
+        </>}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

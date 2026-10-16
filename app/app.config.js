@@ -1,13 +1,10 @@
-// app.config.js at project root (next to package.json)
 import 'dotenv/config';
-module.exports = {
-  expo: {
-    name: "KitChain",
-    slug: "kitchain",
-    plugins: ["expo-router"],
-    experiments: { typedRoutes: true },
-    extra: {
-      apiBase: process.env.EXPO_PUBLIC_API_BASE
-    }
-  }
-}
+
+// Keep app.json's icon, splash, platform and plugin settings when adding the API URL.
+module.exports = ({ config }) => ({
+  ...config,
+  name: "KitChain",
+  slug: "kitchain",
+  experiments: { ...config.experiments, typedRoutes: true },
+  extra: { ...config.extra, apiBase: process.env.EXPO_PUBLIC_API_BASE },
+});

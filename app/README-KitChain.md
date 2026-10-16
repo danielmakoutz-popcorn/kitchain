@@ -61,10 +61,12 @@ Open on your phone via Expo Go (same Wi‑Fi as the backend).
 
 ## Backend endpoints expected
 
-- `GET /health` → `{ "status": "ok" }`
-- `POST /recipes/scan` → `{ "text": "..." }`
-- `GET /recipes` → list of recipes
-- `GET /recipes/{id}` → single recipe
-- `POST /recipes` → create recipe
-```
+- `GET /api/v1/health` → `{ "status": "ok", "app": "KitChain API" }`
+- `POST /api/v1/recipes/scan` → persisted AI scan with `scan_id`, `title`, `ingredients`, `steps`, `notes`, `raw_text`, `confidence`, and `uncertain_lines`
+- `GET /api/v1/recipes/` → list of recipes
+- `GET /api/v1/recipes/{id}` → single recipe
+- `POST /api/v1/recipes/` → create recipe
+- `PATCH /api/v1/scans/{scan_id}/correction` → store the reviewed correction record
+
+The photo screen now uses only the existing local Qwen AI reader; printed/Tesseract scanning and the PaddleOCR fallback are removed. Haptic controls use the already installed `expo-haptics` dependency. See [current review and validation](../docs/UPGRADE_REVIEW.md) and [pixel-art integration](../docs/PIXEL_ART.md).
 

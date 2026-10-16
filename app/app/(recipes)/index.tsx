@@ -1,17 +1,10 @@
-import { useEffect, useState } from "react";
-import { View, Text, FlatList, RefreshControl, Pressable } from "react-native";
-import { Link, useRouter } from "expo-router";
-import { api, tryParse } from "../../lib/api";
+import { useCallback, useState } from "react";
+import { View, Text, FlatList, RefreshControl } from "react-native";
+import { HapticPressable as Pressable } from "@/components/HapticPressable";
+import { Link, useFocusEffect, useRouter } from "expo-router";
+import { api, API_BASE as BASE, tryParse } from "../../lib/api";
 import { Recipe, RecipeSchema } from "../../lib/types";
 import { RecipeCard } from "../../components/RecipeCard";
-import { useFocusEffect } from "expo-router";
-import { useCallback } from "react";
-import Constants from "expo-constants";
-
-const BASE =
-  (Constants.expoConfig as any)?.extra?.apiBase ??
-  process.env.EXPO_PUBLIC_API_BASE ??
-  "http://192.168.x.x:8000";
 
 export default function RecipeList() {
   const [data, setData] = useState<Recipe[]>([]);
@@ -45,8 +38,8 @@ export default function RecipeList() {
   return (
     <View style={{ flex:1, padding:16 }}>
       <View style={{ flexDirection:"row", gap:12, marginBottom:12 }}>
-        <Link href="/(recipes)/AddRecipe" style={{ color:"#1e73ff", fontSize:16 }}>+ Add Recipe</Link>
-        <Link href="/(recipes)/AddFromPhoto" style={{ color:"#1e73ff", fontSize:16 }}>+ Add from Photo</Link>
+        <Link href="/(recipes)/AddRecipe" asChild><Pressable><Text style={{ color:"#1e73ff", fontSize:16 }}>+ Add Recipe</Text></Pressable></Link>
+        <Link href="/(recipes)/AddFromPhoto" asChild><Pressable><Text style={{ color:"#1e73ff", fontSize:16 }}>+ Add from Photo</Text></Pressable></Link>
       </View>
     <View
       style={{
@@ -62,7 +55,7 @@ export default function RecipeList() {
         Kitchain v0.1 Proof of Concept
       </Text>
       <Text style={{ color: "#166534", marginTop: 4 }}>
-        Local AI handwritten recipe scanning is experimental. please review before saving. Qwen2.5-VL.
+        Local AI recipe scanning is experimental. Review each recipe before saving.
       </Text>
     </View>
     {error ? (

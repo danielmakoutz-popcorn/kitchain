@@ -3,14 +3,17 @@ from sqlmodel import Session, select
 from backend.app.db.session import engine
 from backend.app.models.recipe import Recipe
 from backend.app.models.scan import RecipeScan
-from backend.app.services.handwriting_ocr import paddle_ocr_image_to_lines
+from backend.app.models.handwriting_profile import HandwritingProfile
 from backend.app.services.ollama_recipe_vision import read_recipe_with_ollama
 from fastapi import Query
+from starlette.concurrency import run_in_threadpool
 from io import BytesIO
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pathlib import Path
+from typing import Literal
+import logging
 import uuid
-import pytesseract
+import requests
 
 # If you use iPhone HEIC/HEIF, this makes Pillow able to open those files.
 try:
@@ -19,9 +22,9 @@ try:
 except Exception:
     pass
 
-from backend.app.services.ocr_parser import parse_ocr_to_recipe
-
 router = APIRouter()
+logger = logging.getLogger(__name__)
+MAX_SCAN_BYTES = 20 * 1024 * 1024
 
 
 @router.post("/", response_model=Recipe)
@@ -120,7 +123,7 @@ def delete_recipe(recipe_id: int):
 @router.post("/scan")
 async def scan_recipe_photo(
     file: UploadFile = File(...),
-    mode: str = Query("printed", pattern="^(printed|handwritten)$"),
+    mode: Literal["handwritten"] = Query("handwritten"),
     handwriting_profile_id: int | None = Query(default=None),
 ):
     allowed = {
@@ -133,86 +136,56 @@ async def scan_recipe_photo(
     if file.content_type not in allowed:
         raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type}")
 
+    if handwriting_profile_id is not None:
+        with Session(engine) as session:
+            if not session.get(HandwritingProfile, handwriting_profile_id):
+                raise HTTPException(status_code=404, detail="Handwriting profile not found")
+
+    raw = await file.read(MAX_SCAN_BYTES + 1)
+    if len(raw) > MAX_SCAN_BYTES:
+        raise HTTPException(status_code=413, detail="Choose a recipe photo smaller than 20 MB.")
+    if not raw:
+        raise HTTPException(status_code=400, detail="The photo is empty. Choose another image.")
     try:
-        # 1) Read uploaded file
-        raw = await file.read()
+        with Image.open(BytesIO(raw)) as original:
+            img = ImageOps.exif_transpose(original).convert("RGB")
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise HTTPException(status_code=413, detail="The image dimensions are too large. Choose a smaller photo.")
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise HTTPException(status_code=400, detail="Could not read this photo. Try exporting it as JPEG or PNG.")
 
-        # 2) Open image
-        img = Image.open(BytesIO(raw))
-
-        img = ImageOps.exif_transpose(img).convert("RGB")
-
-        scale = 2
-        img2 = img.resize((img.width * scale, img.height * scale), Image.Resampling.LANCZOS)
-
-        # save this version for handwriting mode
-
-        UPLOAD_DIR = Path("backend/data/uploads")
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        saved_path = UPLOAD_DIR / f"scan_{uuid.uuid4().hex}.jpg"
+    upload_dir = Path("backend/data/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    saved_path = upload_dir / f"scan_{uuid.uuid4().hex}.jpg"
+    persisted = False
+    try:
         img.save(saved_path)
+        try:
+            # The same local model, prompt and image preparation; keep other routes responsive.
+            vision_result = await run_in_threadpool(read_recipe_with_ollama, str(saved_path))
+        except requests.Timeout:
+            raise HTTPException(status_code=504, detail="The local AI took too long. Try scanning again.")
+        except requests.ConnectionError:
+            raise HTTPException(status_code=503, detail="The local AI is unavailable. Start Ollama and try again.")
+        except requests.RequestException:
+            raise HTTPException(status_code=502, detail="The local AI could not finish. Check that qwen2.5vl:3b is installed and try again.")
+        except (ValueError, TypeError, KeyError):
+            raise HTTPException(status_code=502, detail="The AI returned an unreadable recipe. Try a clearer photo or scan again.")
 
-        # 3) Parse OCR text
-        # Save: handwritten gets the cleaned image, printed gets original RGB
-        if mode == "handwritten":
-            img.save(saved_path)
-        else:
-            img.save(saved_path)
-
-        if mode == "handwritten":
-            try:
-                vision_result = read_recipe_with_ollama(str(saved_path))
-
-                return {
-                    "scan_id": None,
-                    "title": vision_result["title"],
-                    "ingredients": vision_result["ingredients"],
-                    "steps": vision_result["steps"],
-                    "notes": vision_result["notes"],
-                    "raw_text": vision_result["raw_model_response"],
-                    "mode": mode,
-                    "handwriting_profile_id": handwriting_profile_id,
-                    "confidence": "medium",
-                    "uncertain_lines": vision_result["uncertain_words"],
-                }
-
-            except Exception as vision_error:
-                print("OLLAMA_VISION_FAILED:", vision_error)
-
-                lines = paddle_ocr_image_to_lines(str(saved_path))
-                text = "\n".join(lines)
-
-        else:
-            config = "--oem 1 --psm 4"
-            text = pytesseract.image_to_string(img, lang="eng", config=config)
-
-        title, ingredients, steps = parse_ocr_to_recipe(text)
-
-        parsed_recipe = {
-            "title": title,
-            "ingredients": ingredients,
-            "steps": steps,
-        }
-
-        uncertain_lines = []
-        if not ingredients:
+        parsed_recipe = {key: vision_result[key] for key in ("title", "ingredients", "steps", "notes")}
+        uncertain_lines = list(vision_result["uncertain_words"])
+        if not parsed_recipe["ingredients"]:
             uncertain_lines.append("No ingredients detected")
-        if not steps:
+        if not parsed_recipe["steps"]:
             uncertain_lines.append("No steps detected")
-        if len(text.strip()) < 20:
-            uncertain_lines.append("Very little OCR text detected")
-
-        confidence = "high"
-        if uncertain_lines:
-            confidence = "low" if len(uncertain_lines) >= 2 else "medium"
-        if mode == "handwritten" and text.count("\n") < 2:
-            confidence = "low"
+        # A review hint, not an accuracy score. Keep the AI path's conservative default.
+        confidence = "low" if not parsed_recipe["ingredients"] or not parsed_recipe["steps"] else "medium"
 
         scan = RecipeScan(
             image_path=str(saved_path),
             mode=mode,
             handwriting_profile_id=handwriting_profile_id,
-            raw_text=text,
+            raw_text=vision_result["raw_model_response"],
             parsed_recipe=parsed_recipe,
             uncertain_lines=uncertain_lines,
             confidence=confidence,
@@ -221,18 +194,25 @@ async def scan_recipe_photo(
             session.add(scan)
             session.commit()
             session.refresh(scan)
+            scan_id = scan.id
+        persisted = True
 
         return {
-            "scan_id": scan.id,
-            "title": title,
-            "ingredients": ingredients,
-            "steps": steps,
-            "raw_text": text,
+            "scan_id": scan_id,
+            **parsed_recipe,
+            "raw_text": vision_result["raw_model_response"],
             "mode": mode,
             "handwriting_profile_id": handwriting_profile_id,
             "confidence": confidence,
             "uncertain_lines": uncertain_lines,
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OCR scan failed: {e}")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Could not save recipe scan")
+        raise HTTPException(status_code=500, detail="Could not save this scan. Please try again.")
+    finally:
+        img.close()
+        if not persisted:
+            saved_path.unlink(missing_ok=True)

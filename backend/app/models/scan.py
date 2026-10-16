@@ -12,7 +12,7 @@ class RecipeScan(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     image_path: Optional[str] = None
-    mode: str = Field(default="printed", index=True)
+    mode: str = Field(default="handwritten", index=True)
     status: str = Field(default="scanned", index=True)
 
     handwriting_profile_id: Optional[int] = Field(default=None, foreign_key="handwritingprofile.id")

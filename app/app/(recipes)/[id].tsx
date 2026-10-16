@@ -1,15 +1,12 @@
-import { useEffect, useState } from "react";
-import { View, Text, ScrollView, TextInput, Pressable, Alert, Image, KeyboardAvoidingView, Platform } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, ScrollView, TextInput, Alert, Image, KeyboardAvoidingView, Platform } from "react-native";
+import { HapticPressable as Pressable } from "@/components/HapticPressable";
+import { feedback } from "@/lib/haptics";
+import { photoForm } from "@/lib/photos";
 import { useLocalSearchParams, router } from "expo-router";
-import { api, tryParse } from "../../lib/api";
+import { api, API_BASE as BASE, requestJson, tryParse } from "../../lib/api";
 import { Recipe, RecipeSchema } from "../../lib/types";
-import Constants from "expo-constants";
 import * as ImagePicker from "expo-image-picker";
-
-const BASE =
-  (Constants.expoConfig as any)?.extra?.apiBase ??
-  process.env.EXPO_PUBLIC_API_BASE ??
-  "http://192.168.x.x:8000";
 
 function listToText(value: unknown): string {
   if (Array.isArray(value)) return value.join("\n");
@@ -37,8 +34,10 @@ export default function RecipeDetail() {
   const [ingredientsText, setIngredientsText] = useState("");
   const [stepsText, setStepsText] = useState("");
   const [photoUri, setPhotoUri] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mutationLock = useRef(false);
 
-  async function loadRecipe() {
+  const loadRecipe = useCallback(async () => {
     setLoading(true);
     setError("");
     
@@ -58,21 +57,24 @@ export default function RecipeDetail() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [id]);
 
   useEffect(() => {
     loadRecipe();
-  }, [id]);
+  }, [loadRecipe]);
 
   async function saveEdits() {
     if (!recipe) return;
     if (!title.trim()) return Alert.alert("Title required");
+    if (mutationLock.current) return;
+    mutationLock.current = true;
+    setBusy(true);
 
     const ingredients = textToList(ingredientsText);
     const steps = textToList(stepsText);
 
     try {
-      const res = await fetch(`${BASE}/api/v1/recipes/${id}`, {
+      const updated = await requestJson(`/api/v1/recipes/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -86,57 +88,43 @@ export default function RecipeDetail() {
         }),
       });
 
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-
-      const updated = await res.json();
       const parsed = tryParse(RecipeSchema, updated);
       setRecipe(parsed);
       setIsEditing(false);
-
+      feedback("success");
       Alert.alert("Saved", "Recipe updated.");
     } catch (e: any) {
+      feedback("error");
       Alert.alert("Save error", String(e?.message || e));
+    } finally {
+      mutationLock.current = false;
+      setBusy(false);
     }
   }
 
   async function pickAndUploadPhoto() {
-    if (!id) return;
-
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-    });
-
-    if (res.canceled) return;
-
-    const uri = res.assets[0].uri;
-
+    if (!id || mutationLock.current) return;
+    mutationLock.current = true;
+    setBusy(true);
     try {
-      const form = new FormData();
-
-      // @ts-ignore React Native file object for FormData
-      form.append("file", {
-        uri,
-        name: "recipe_photo.jpg",
-        type: "image/jpeg",
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 });
+      if (res.canceled || !res.assets[0]) return;
+      const updated = await requestJson<Recipe>(`/api/v1/recipes/${id}/photo`, {
+        method: "POST", body: await photoForm(res.assets[0]),
       });
-
-      const uploadRes = await fetch(`${BASE}/api/v1/recipes/${id}/photo`, {
-        method: "POST",
-        body: form,
-      });
-
-      if (!uploadRes.ok) throw new Error(`${uploadRes.status} ${uploadRes.statusText}`);
-
-      const updated = await uploadRes.json();
       const parsed = tryParse(RecipeSchema, updated);
 
       setRecipe(parsed);
       setPhotoUri(updated.image_path ? `${BASE}${updated.image_path}` : "");
 
+      feedback("success");
       Alert.alert("Photo added", "Recipe photo updated.");
     } catch (e: any) {
+      feedback("error");
       Alert.alert("Photo upload error", String(e?.message || e));
+    } finally {
+      mutationLock.current = false;
+      setBusy(false);
     }
   }
 
@@ -150,22 +138,37 @@ export default function RecipeDetail() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            if (mutationLock.current) return;
+            mutationLock.current = true;
+            setBusy(true);
             try {
-              const res = await fetch(`${BASE}/api/v1/recipes/${id}`, {
+              await requestJson(`/api/v1/recipes/${id}`, {
                 method: "DELETE",
               });
 
-              if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-
+              feedback("success");
               Alert.alert("Deleted", "Recipe removed.");
               router.back();
             } catch (e: any) {
+              feedback("error");
               Alert.alert("Delete error", String(e?.message || e));
+            } finally {
+              mutationLock.current = false;
+              setBusy(false);
             }
           },
         },
       ]
     );
+  }
+
+  function cancelEdits() {
+    if (!recipe || mutationLock.current) return;
+    setTitle(recipe.title);
+    setDescription(recipe.description || "");
+    setIngredientsText(listToText(recipe.ingredients));
+    setStepsText(listToText(recipe.steps));
+    setIsEditing(false);
   }
 
   if (loading) {
@@ -229,6 +232,7 @@ export default function RecipeDetail() {
 
         <Pressable
           onPress={pickAndUploadPhoto}
+          disabled={busy}
           style={{ backgroundColor: "#eee", padding: 14, borderRadius: 10 }}
         >
           <Text style={{ textAlign: "center", fontWeight: "600" }}>
@@ -238,6 +242,7 @@ export default function RecipeDetail() {
 
         <Text style={{ fontWeight: "600" }}>Title</Text>
         <TextInput
+          editable={!busy}
           value={title}
           onChangeText={setTitle}
           style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10 }}
@@ -245,6 +250,7 @@ export default function RecipeDetail() {
 
         <Text style={{ fontWeight: "600" }}>Description</Text>
         <TextInput
+          editable={!busy}
           value={description}
           onChangeText={setDescription}
           multiline
@@ -253,6 +259,7 @@ export default function RecipeDetail() {
 
         <Text style={{ fontWeight: "600" }}>Ingredients</Text>
         <TextInput
+          editable={!busy}
           value={ingredientsText}
           onChangeText={setIngredientsText}
           multiline
@@ -261,6 +268,7 @@ export default function RecipeDetail() {
 
         <Text style={{ fontWeight: "600" }}>Steps / Notes</Text>
         <TextInput
+          editable={!busy}
           value={stepsText}
           onChangeText={setStepsText}
           multiline
@@ -269,13 +277,15 @@ export default function RecipeDetail() {
 
         <Pressable
           onPress={saveEdits}
+          disabled={busy}
           style={{ backgroundColor: "#16a34a", padding: 14, borderRadius: 10 }}
         >
-          <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>Save Changes</Text>
+          <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>{busy ? "Working…" : "Save Changes"}</Text>
         </Pressable>
 
         <Pressable
-          onPress={() => setIsEditing(false)}
+          disabled={busy}
+          onPress={cancelEdits}
           style={{ backgroundColor: "#eee", padding: 14, borderRadius: 10 }}
         >
           <Text style={{ textAlign: "center", fontWeight: "600" }}>Cancel</Text>
@@ -305,6 +315,7 @@ export default function RecipeDetail() {
       <View style={{ flexDirection: "row", gap: 10 }}>
         <Pressable
           onPress={() => setIsEditing(true)}
+          disabled={busy}
           style={{ backgroundColor: "#1e73ff", padding: 12, borderRadius: 10, flex: 1 }}
         >
           <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>Edit</Text>
@@ -312,6 +323,8 @@ export default function RecipeDetail() {
 
         <Pressable
           onPress={deleteRecipe}
+          disabled={busy}
+          haptic="warning"
           style={{ backgroundColor: "#dc2626", padding: 12, borderRadius: 10, flex: 1 }}
         >
           <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>Delete</Text>
