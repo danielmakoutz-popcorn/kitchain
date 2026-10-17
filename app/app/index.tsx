@@ -18,6 +18,8 @@ export default function Home() {
       <Link href="/(recipes)/AddFromPhoto" asChild><KitchenButton variant="primary" icon="scan">Scan with AI</KitchenButton></Link>
       <Link href="/(recipes)" asChild><KitchenButton variant="butter" icon="book">Your recipe collection</KitchenButton></Link>
       <Link href="/(recipes)/AddRecipe" asChild><KitchenButton icon="plus">Write a recipe</KitchenButton></Link>
+      <Link href="/discover" asChild><KitchenButton variant="primary" icon="search">What should we cook?</KitchenButton></Link>
+      <Link href="/public" asChild><KitchenButton icon="book">Public recipe table</KitchenButton></Link>
     </PixelFrame>
     <KitchenText style={{ color: c.muted, textAlign: "center", fontSize: 14 }}>Old favorites. New traditions.</KitchenText>
   </KitchenScroll>;

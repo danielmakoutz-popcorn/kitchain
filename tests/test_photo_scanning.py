@@ -19,40 +19,10 @@ from PIL import Image
 import requests
 
 from backend.app.services import ollama_recipe_vision as vision
+from support import LocalApiTests
 
 
-class PhotoScanningTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.storage = tempfile.TemporaryDirectory(prefix="kitchain-tests-")
-        cls.old_cwd = Path.cwd()
-        cls.old_db = os.environ.get("DB_URL")
-        os.environ["DB_URL"] = f"sqlite:///{cls.storage.name}/test.db"
-        os.chdir(cls.storage.name)
-        from backend.app.main import app
-        from backend.app.db.session import engine
-        from backend.app.api.v1 import recipes
-        cls.engine = engine
-        from sqlalchemy import event
-        event.listen(engine, "connect", lambda connection, _: connection.execute("PRAGMA foreign_keys=ON"))
-        expected_db = Path(cls.storage.name) / "test.db"
-        if Path(engine.url.database).resolve() != expected_db.resolve():
-            raise RuntimeError("Refusing to run integration checks outside temporary storage")
-        cls.routes = recipes
-        cls.client_context = TestClient(app)
-        cls.client = cls.client_context.__enter__()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.client_context.__exit__(None, None, None)
-        cls.engine.dispose()
-        os.chdir(cls.old_cwd)
-        if cls.old_db is None:
-            os.environ.pop("DB_URL", None)
-        else:
-            os.environ["DB_URL"] = cls.old_db
-        cls.storage.cleanup()
-
+class PhotoScanningTests(LocalApiTests):
     def setUp(self):
         from sqlmodel import SQLModel
         SQLModel.metadata.drop_all(self.engine)

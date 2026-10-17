@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from sqlmodel import Session, select
 from backend.app.db.session import engine
 from backend.app.models.recipe import Recipe
+from backend.app.models.discovery import RecipeInfo
 from backend.app.models.scan import RecipeScan, ScanRecipeLink
 from sqlalchemy.exc import IntegrityError
 from backend.app.models.handwriting_profile import HandwritingProfile
@@ -167,6 +168,12 @@ def delete_recipe(recipe_id: int):
         if not recipe:
             raise HTTPException(status_code=404, detail="Recipe not found")
 
+        # Existing local SQLite databases may not enable foreign-key cascades.
+        # Remove the new metadata explicitly before an integer recipe ID can be reused.
+        info = session.get(RecipeInfo, recipe_id)
+        if info:
+            session.delete(info)
+            session.flush()
         link = session.exec(select(ScanRecipeLink).where(ScanRecipeLink.recipe_id == recipe_id)).first()
         if link:
             session.delete(link)
