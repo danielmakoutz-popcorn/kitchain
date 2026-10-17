@@ -1,15 +1,12 @@
 import type { ImagePickerAsset } from "expo-image-picker";
-import { Platform } from "react-native";
+import { File } from "expo-file-system";
 
-/** Preserve the picker's real file type; use a Blob for browser previews. */
+/** SDK 57's fetch requires file bytes/Blobs, rather than React Native URI parts. */
 export async function photoForm(asset: ImagePickerAsset): Promise<FormData> {
+  const file = new File(asset.uri);
+  const bytes = await file.bytes();
+  const blob = new Blob([bytes], { type: asset.mimeType || file.type || "application/octet-stream" });
   const form = new FormData();
-  const name = asset.fileName || "recipe.jpg";
-  if (Platform.OS === "web") {
-    const file = asset.file || await (await fetch(asset.uri)).blob();
-    form.append("file", file, name);
-  } else {
-    form.append("file", { uri: asset.uri, name, type: asset.mimeType || "image/jpeg" } as unknown as Blob);
-  }
+  form.append("file", blob, asset.fileName || file.name || "recipe.jpg");
   return form;
 }

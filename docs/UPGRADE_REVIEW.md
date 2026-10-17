@@ -33,6 +33,12 @@ Compatibility fixes include Expo Router navigation entry points, removed legacy-
 
 Use Node.js 24 LTS (at least 24.3), run `npm ci` in `app`, then restart Expo using `npx expo start --clear`. Follow [the PR walkthrough](TRY_PR.md). Exporting bundles does not establish compatibility with a physical Expo Go installation; the final phone check remains open. A development build is the next step for release preparation.
 
+## SDK 57 photo-upload fix
+
+The physical iPhone reported `Unsupported FormDataPart implementation` before sending a scan. SDK 57's default Expo fetch rejects the old React Native `{ uri, name, type }` file part. The shared native photo helper now reads the selected/durable file asynchronously and sends a standard Blob with the picker's MIME type and filename. Both scanning and attaching a recipe photo use this helper. The browser helper retains browser File/data-URL handling without importing native FileSystem. No packages or model behavior changed.
+
+The installed Expo serializer reproduces the old failure and accepts the fixed binary body in regression tests. TypeScript, lint, 18 frontend tests, and iOS/Android/web exports passed. The remaining verification is a real phone request to the reachable backend, then a scan against the existing Ollama model.
+
 ## AI behavior preserved
 
 The model remains `qwen2.5vl:3b`, the endpoint remains local `/api/generate`, and the extraction prompt is unchanged. The payload still uses `stream: false`, temperature `0.1`, context `4096`, and the 300-second model request timeout. Image handling retains EXIF orientation, RGB conversion, and the existing 1200×1200 maximum/quality-90 model thumbnail. An unused doubled-size image allocation was removed; it was never passed to the AI.
@@ -59,7 +65,9 @@ CI=1 npx expo export --platform all --output-dir /tmp/kitchain-export
 
 API coverage uses actual FastAPI startup, SQLite sessions with foreign-key enforcement, image decoding/resizing, scan persistence, corrections, and CRUD. Only the model HTTP boundary is mocked. All media/databases are synthetic and temporary. The API suite has 16 methods, including source attachment, rollback on copy failure, sequential retries, and a forced overlap of two saves for one scan. No personal recipe photos are used.
 
-Twelve frontend tests exercise actual TypeScript draft serialization/queueing/completion and search code with a memory storage adapter. They include corrupt drafts, failed writes, new screen/store recovery, server isolation, late cleanup versus newer edits/photos/rescans, completion markers, literal search and sorting. Two added tests load the native adapter with mocked storage/files to verify pending and failed asynchronous copies. Native AsyncStorage/FileSystem and browser IndexedDB still need device/browser interaction checks.
+Eighteen frontend tests exercise actual TypeScript draft serialization/queueing/completion and search code with a memory storage adapter. They include corrupt drafts, failed writes, new screen/store recovery, server isolation, late cleanup versus newer edits/photos/rescans, completion markers, literal search and sorting. Six upload tests use Expo’s installed FormData patch/multipart serializer to reproduce the old URI-part failure and verify native photo bytes, recovered draft photos, filenames/MIME types, read failures, and browser File/data-URL handling. Native disk access is mocked; this does not replace a phone upload check.
+
+Two added tests load the native adapter with mocked storage/files to verify pending and failed asynchronous copies. Native AsyncStorage/FileSystem and browser IndexedDB still need device/browser interaction checks.
 
 The earlier standard-library parser checks are retained for the historical text helper; the removed OCR engines are not runtime dependencies.
 
@@ -72,7 +80,7 @@ Executed in Python 3.12.14 / Node 24.19.0 with a fresh virtual environment and `
 | `npx expo-doctor@latest` | PASS: all 21 compatibility/configuration checks |
 | `npx tsc --noEmit` | PASS |
 | `npm run lint` | PASS: no ESLint errors or warnings |
-| `npm test` | PASS: 12 tests; real draft/search modules with memory storage, plus mocked async native photo-copy cases |
+| `npm test` | PASS: 18 tests; draft/search, async photo-copy, and SDK 57 multipart upload regression cases |
 | `CI=1 npx expo export --platform all` | PASS: iOS/Android Hermes bundles plus web/static export; this is not an installed native build |
 | Resolved public Expo configuration | PASS: icon and splash-plugin settings from `app.json` retained |
 | Comparison with base commit `66ec9d6` | PASS: model, URL, prompt, and generation payload AST values unchanged |
