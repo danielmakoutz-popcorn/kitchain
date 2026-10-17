@@ -83,7 +83,7 @@ npm run lint
 npm test
 ```
 
-The 16 API tests use temporary SQLite/media storage and synthetic images, mocking only the model HTTP response. They check persistence, corrections, errors, photo attachment, save retries and responsiveness. Eighteen frontend tests cover draft serialization/ordering, recipe search, asynchronous photo-copy behavior, and SDK 57 multipart photo uploads with mocked native disk access. Neither suite measures handwriting accuracy or tests physical haptic feel.
+The 16 API tests use temporary SQLite/media storage and synthetic images, mocking only the model HTTP response. They check persistence, corrections, errors, photo attachment, save retries and responsiveness. Nineteen frontend tests cover draft serialization/ordering, recipe search, asynchronous photo-copy behavior, and SDK 57 multipart photo uploads with mocked native disk access. Neither suite measures handwriting accuracy or tests physical haptic feel.
 
 ## Operation and limitations
 

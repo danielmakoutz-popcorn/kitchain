@@ -1,3 +1,4 @@
+import { fetch } from "expo/fetch";
 import Constants from "expo-constants";
 
 export const API_BASE = String(Constants.expoConfig?.extra?.apiBase || process.env.EXPO_PUBLIC_API_BASE || "").replace(/\/+$/, "");

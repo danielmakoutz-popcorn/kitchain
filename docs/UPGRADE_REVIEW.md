@@ -35,9 +35,9 @@ Use Node.js 24 LTS (at least 24.3), run `npm ci` in `app`, then restart Expo usi
 
 ## SDK 57 photo-upload fix
 
-The physical iPhone reported `Unsupported FormDataPart implementation` before sending a scan. SDK 57's default Expo fetch rejects the old React Native `{ uri, name, type }` file part. The shared native photo helper now reads the selected/durable file asynchronously and sends a standard Blob with the picker's MIME type and filename. Both scanning and attaching a recipe photo use this helper. The browser helper retains browser File/data-URL handling without importing native FileSystem. No packages or model behavior changed.
+The physical iPhone reported `Unsupported FormDataPart implementation` before sending a scan. SDK 57's default Expo fetch rejects the old React Native `{ uri, name, type }` file part. The shared native photo helper now passes an Expo File directly to FormData, and the API helper explicitly uses `expo/fetch`. FileSystem supplies the on-disk filename/type and the serializer reads its bytes without constructing a Blob. Both scanning and attaching a recipe photo use this helper. The browser helper retains browser File/data-URL handling without importing native FileSystem. No packages or model behavior changed.
 
-The installed Expo serializer reproduces the old failure and accepts the fixed binary body in regression tests. TypeScript, lint, 18 frontend tests, and iOS/Android/web exports passed. The remaining verification is a real phone request to the reachable backend, then a scan against the existing Ollama model.
+The earlier byte-to-Blob patch passed tests under Node but failed on the iPhone because React Native cannot construct Blobs from ArrayBuffer views. That patch is replaced with the Expo-documented native File upload. Tests now model the native Blob restriction and exercise the installed Expo serializer against native-like File objects. TypeScript, lint, 19 frontend tests, and iOS/Android/web exports passed. The remaining verification is a real phone request to the reachable backend, then a scan against the existing Ollama model.
 
 ## AI behavior preserved
 
@@ -65,7 +65,7 @@ CI=1 npx expo export --platform all --output-dir /tmp/kitchain-export
 
 API coverage uses actual FastAPI startup, SQLite sessions with foreign-key enforcement, image decoding/resizing, scan persistence, corrections, and CRUD. Only the model HTTP boundary is mocked. All media/databases are synthetic and temporary. The API suite has 16 methods, including source attachment, rollback on copy failure, sequential retries, and a forced overlap of two saves for one scan. No personal recipe photos are used.
 
-Eighteen frontend tests exercise actual TypeScript draft serialization/queueing/completion and search code with a memory storage adapter. They include corrupt drafts, failed writes, new screen/store recovery, server isolation, late cleanup versus newer edits/photos/rescans, completion markers, literal search and sorting. Six upload tests use Expo’s installed FormData patch/multipart serializer to reproduce the old URI-part failure and verify native photo bytes, recovered draft photos, filenames/MIME types, read failures, and browser File/data-URL handling. Native disk access is mocked; this does not replace a phone upload check.
+Nineteen frontend tests exercise actual TypeScript draft serialization/queueing/completion and search code with a memory storage adapter. They include corrupt drafts, failed writes, new screen/store recovery, server isolation, late cleanup versus newer edits/photos/rescans, completion markers, literal search and sorting. Seven upload tests use Expo’s installed FormData patch/multipart serializer to reproduce the old URI-part failure and verify native photo bytes, recovered draft photos, filenames/MIME types, read failures, the native Blob limitation, and browser File/data-URL handling. Native disk access is mocked; this does not replace a phone upload check.
 
 Two added tests load the native adapter with mocked storage/files to verify pending and failed asynchronous copies. Native AsyncStorage/FileSystem and browser IndexedDB still need device/browser interaction checks.
 
@@ -80,7 +80,7 @@ Executed in Python 3.12.14 / Node 24.19.0 with a fresh virtual environment and `
 | `npx expo-doctor@latest` | PASS: all 21 compatibility/configuration checks |
 | `npx tsc --noEmit` | PASS |
 | `npm run lint` | PASS: no ESLint errors or warnings |
-| `npm test` | PASS: 18 tests; draft/search, async photo-copy, and SDK 57 multipart upload regression cases |
+| `npm test` | PASS: 19 tests; draft/search, async photo-copy, and SDK 57 multipart upload regression cases |
 | `CI=1 npx expo export --platform all` | PASS: iOS/Android Hermes bundles plus web/static export; this is not an installed native build |
 | Resolved public Expo configuration | PASS: icon and splash-plugin settings from `app.json` retained |
 | Comparison with base commit `66ec9d6` | PASS: model, URL, prompt, and generation payload AST values unchanged |

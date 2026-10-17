@@ -32,6 +32,15 @@ const ExpoFormData = installFormDataPatch(RNFormData);
 const { convertFormDataAsync } = load('../node_modules/expo/src/winter/fetch/convertFormData.ts', {
   '../../utils/blobUtils': { blobToArrayBufferAsync: blob => blob.arrayBuffer() },
 });
+// Model the native Blob limitation that Node's browser-compatible Blob misses.
+class NativeBlob {
+  constructor(parts) {
+    if (parts.some(part => part instanceof ArrayBuffer || ArrayBuffer.isView(part))) {
+      throw new Error("Creating blobs from 'ArrayBuffer' and 'ArrayBufferView' are not supported");
+    }
+    throw new Error('Native uploads should reference a File directly');
+  }
+}
 const imageBytes = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 128, 64]);
 
 for (const uri of ['file:///cache/recipe.png', 'file:///documents/kitchain-scan-drafts/recovered.png']) {
@@ -39,10 +48,10 @@ for (const uri of ['file:///cache/recipe.png', 'file:///documents/kitchain-scan-
     class File {
       constructor(value) { assert.equal(value, uri); }
       type = 'image/png';
-      name = 'recipe.png';
+      name = 'Grandma card.png';
       async bytes() { return imageBytes; }
     }
-    const { photoForm } = load('../lib/photos.ts', { 'expo-file-system': { File } }, { FormData: ExpoFormData });
+    const { photoForm } = load('../lib/photos.ts', { 'expo-file-system': { File } }, { FormData: ExpoFormData, Blob: NativeBlob });
     const form = await photoForm({ uri, fileName: 'Grandma card.png', mimeType: 'image/png' });
     const { body, boundary } = await convertFormDataAsync(form, 'test-boundary');
     const encoded = Buffer.from(body);
@@ -60,10 +69,11 @@ test('the real SDK serializer rejects the old URI part, reproducing the phone er
   await assert.rejects(convertFormDataAsync(form), /Unsupported FormDataPart implementation/);
 });
 
-test('a native photo read failure propagates before a request can be sent', async () => {
+test('a native file read failure propagates during multipart serialization', async () => {
   class File { async bytes() { throw new Error('Photo no longer exists'); } }
-  const { photoForm } = load('../lib/photos.ts', { 'expo-file-system': { File } });
-  await assert.rejects(photoForm({ uri: 'file:///missing.png' }), /Photo no longer exists/);
+  const { photoForm } = load('../lib/photos.ts', { 'expo-file-system': { File } }, { FormData: ExpoFormData, Blob: NativeBlob });
+  const form = await photoForm({ uri: 'file:///missing.png' });
+  await assert.rejects(convertFormDataAsync(form), /Photo no longer exists/);
 });
 
 test('web uploads preserve the original browser File', async () => {
@@ -83,4 +93,9 @@ test('web recovered drafts upload the bytes from their data URL', async () => {
   assert.equal(part.name, 'recovered.png');
   assert.equal(part.type, 'image/png');
   assert.deepEqual(Buffer.from(await part.arrayBuffer()), Buffer.from(imageBytes));
+});
+
+
+test('the native Blob model reproduces the ArrayBuffer error in the previous fix', () => {
+  assert.throws(() => new NativeBlob([imageBytes]), /Creating blobs from 'ArrayBuffer'/);
 });
