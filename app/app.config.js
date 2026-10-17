@@ -1,4 +1,3 @@
-import 'dotenv/config';
 
 // Keep app.json's icon, splash, platform and plugin settings when adding the API URL.
 module.exports = ({ config }) => ({

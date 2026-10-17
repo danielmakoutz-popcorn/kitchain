@@ -59,14 +59,14 @@ python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000/docs` for interactive routes. API integration tests exercise startup and SQLite using synthetic data; see the current review for the boundary between those checks and actual device/model testing.
 
-In a separate terminal, start the mobile project:
+The mobile project targets **Expo SDK 57**, matching the SDK 57 Expo Go client. Use Node.js 24 LTS (at least 24.3). In a separate terminal, start the mobile project:
 
 ```bash
 cd app
 npm ci
 cp .env.example .env
 # Set EXPO_PUBLIC_API_BASE to the API origin reachable by the device
-npx expo start
+npx expo start --clear
 ```
 
 For a physical phone, `127.0.0.1` refers to the phone itself. Use the development machine's reachable LAN address and bind the API to that interface in the trusted lab. The client now normalizes trailing slashes and uses one API helper, including the health route. Browser/CORS access to a live API still needs separate configuration if a browser client is intended.
@@ -83,7 +83,7 @@ npm run lint
 npm test
 ```
 
-The 16 API tests use temporary SQLite/media storage and synthetic images, mocking only the model HTTP response. They check persistence, corrections, errors, photo attachment, save retries and responsiveness. Ten pure TypeScript-module tests cover draft serialization/ordering and recipe search. Neither suite measures handwriting accuracy or tests physical haptic feel.
+The 16 API tests use temporary SQLite/media storage and synthetic images, mocking only the model HTTP response. They check persistence, corrections, errors, photo attachment, save retries and responsiveness. Twelve frontend tests cover draft serialization/ordering, recipe search, and mocked asynchronous photo-copy behavior. Neither suite measures handwriting accuracy or tests physical haptic feel.
 
 ## Operation and limitations
 

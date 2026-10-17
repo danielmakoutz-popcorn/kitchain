@@ -133,3 +133,49 @@ test('clearing search shows all recipes; sorting never mutates the collection', 
   assert.deepEqual(findRecipes(recipes, '', 'title').map(r => r.id), [2, 1, 3]);
   assert.deepEqual(recipes.map(r => r.id), original);
 });
+
+function photoAdapter(copy) {
+  const vm = require('node:vm');
+  const source = fs.readFileSync(require.resolve('../lib/draft-platform.ts'), 'utf8');
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  });
+  class Directory {
+    constructor() { this.uri = 'file:///documents/kitchain-scan-drafts'; }
+    create() {}
+  }
+  class File {
+    constructor(parent, name) { this.uri = name ? `${parent.uri}/${name}` : parent; }
+    copy(destination) { return copy(destination); }
+  }
+  const exports = {};
+  vm.runInNewContext(outputText, {
+    exports,
+    require: name => {
+      if (name === 'expo-file-system') return { Directory, File, Paths: { document: 'file:///documents' } };
+      if (name === '@react-native-async-storage/async-storage') return { default: memoryStorage() };
+      throw new Error(`Unexpected runtime import: ${name}`);
+    },
+  });
+  return exports;
+}
+
+test('native photo draft is not ready until the asynchronous file copy finishes', async () => {
+  let finishCopy;
+  const copying = new Promise(resolve => { finishCopy = resolve; });
+  const adapter = photoAdapter(() => copying);
+  let ready = false;
+  const saving = adapter.keepDraftPhoto({ uri: 'file:///cache/card.png', width: 80, height: 50 }).then(photo => {
+    ready = true;
+    return photo;
+  });
+  await Promise.resolve();
+  assert.equal(ready, false);
+  finishCopy();
+  assert.match((await saving).uri, /^file:\/\/\/documents\/kitchain-scan-drafts\//);
+});
+
+test('native photo copy failure reaches the caller instead of storing an unusable draft', async () => {
+  const adapter = photoAdapter(() => Promise.reject(new Error('Storage full')));
+  await assert.rejects(adapter.keepDraftPhoto({ uri: 'file:///cache/card.png' }), /Storage full/);
+});

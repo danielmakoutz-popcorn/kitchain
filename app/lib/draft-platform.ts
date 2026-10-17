@@ -11,7 +11,7 @@ export async function keepDraftPhoto(asset: ImagePickerAsset): Promise<DraftPhot
   directory.create({ intermediates: true, idempotent: true });
   const extension = asset.fileName?.match(/\.(jpe?g|png|webp|heic|heif)$/i)?.[0] || ".jpg";
   const destination = new File(directory, `${Date.now()}-${Math.random().toString(16).slice(2)}${extension}`);
-  new File(asset.uri).copy(destination);
+  await new File(asset.uri).copy(destination);
   return { uri: destination.uri, width: asset.width, height: asset.height, fileName: asset.fileName, mimeType: asset.mimeType };
 }
 

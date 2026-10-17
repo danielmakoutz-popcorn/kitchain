@@ -35,10 +35,10 @@ In another terminal, enter this repository's `app` folder:
 
 ```bash
 npm ci
-npx expo start
+npx expo start --clear
 ```
 
-Use your usual Expo phone workflow. Keep `EXPO_PUBLIC_API_BASE` in `app/.env` pointed at the backend's reachable LAN address. Run `npm ci` because this update adds the SDK-compatible AsyncStorage dependency and makes FileSystem explicit. A custom native development build needs to include those native modules; the installed build/device workflow has not been verified here.
+This branch targets Expo SDK 57 to match the SDK 57 Expo Go client shown on your iPhone. Use Node.js 24 LTS (at least 24.3). After starting Expo, scan the new QR code with your iPhone camera and open it in Expo Go. Keep the computer and phone on the same Wi-Fi and allow Expo Go local-network access. Keep `EXPO_PUBLIC_API_BASE` in `app/.env` pointed at the backend's reachable LAN address. Run `npm ci` to install the upgraded, locked Expo/React Native dependencies. Restart any old Expo server first with Ctrl+C. A custom native development build needs to include those native modules; the installed build/device workflow has not been verified here.
 
 ## 4. Try the new behavior
 
@@ -65,3 +65,18 @@ git pull --ff-only
 Restart the backend and Expo using the steps above. The same PR contains the scanner polish, haptics, all three follow-ups, and the [pixel-art handoff](PIXEL_ART.md).
 
 GitHub references: [marking a draft ready](https://docs.github.com/en/pull-requests/how-tos/create-pull-requests/changing-the-stage-of-a-pull-request) and [merging a pull request](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/merging-a-pull-request).
+
+## If Expo Go says the project is incompatible
+
+The project SDK and the SDK supported by the installed Expo Go must match. This update upgrades the project from SDK 54 through 55 and 56 to SDK 57, including compatible native packages. Refresh your local branch and run `npm ci`, then restart Expo with `--clear`; a GitHub merge alone does not update files already on your computer. You can test this branch before merging.
+
+Confirm the local project version with:
+
+```bash
+cd app
+node -p "require('expo/package.json').version"
+```
+
+It should begin with `57.`. If Expo Go still reports project SDK 54, stop the old Expo process and start Expo from this repository's updated `app` folder, then scan the new QR code. Physical iPhones cannot install an older App Store Expo Go. For the finalized app, a development build and then a TestFlight/release build will avoid depending on Expo Go's current SDK.
+
+See [Expo's SDK upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/) and [SDK 57 release notes](https://expo.dev/changelog/sdk-57).

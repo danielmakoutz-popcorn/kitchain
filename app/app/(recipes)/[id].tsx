@@ -23,7 +23,10 @@ function textToList(value: string): string[] {
 
 export default function RecipeDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  return <RecipeDetailContent key={id} id={id} />;
+}
 
+function RecipeDetailContent({ id }: { id: string }) {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -37,12 +40,8 @@ export default function RecipeDetail() {
   const [busy, setBusy] = useState(false);
   const mutationLock = useRef(false);
 
-  const loadRecipe = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    
-    try {
-      const raw = await api.getRecipe(id!);
+  const loadRecipe = useCallback(() => {
+    return api.getRecipe(id).then((raw) => {
       const parsed = tryParse(RecipeSchema, raw);
       setRecipe(parsed);
 
@@ -51,12 +50,12 @@ export default function RecipeDetail() {
       setIngredientsText(listToText(parsed.ingredients));
       setStepsText(listToText(parsed.steps));
       setPhotoUri(parsed.image_path ? `${BASE}${parsed.image_path}` : "");
-    } catch (e) {
+    }).catch((e) => {
       console.warn("getRecipe error", e);
       setError("Could not load this recipe. It may have been deleted, or the backend might be offline"); 
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
+    });
   }, [id]);
 
   useEffect(() => {
@@ -189,7 +188,11 @@ export default function RecipeDetail() {
         </View>
 
         <Pressable
-          onPress={loadRecipe}
+          onPress={() => {
+            setLoading(true);
+            setError("");
+            void loadRecipe();
+          }}
           style={{ backgroundColor: "#1e73ff", padding: 14, borderRadius: 10 }}
         >
           <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>Try Again</Text>
