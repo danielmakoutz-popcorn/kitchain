@@ -27,7 +27,7 @@ Create a [Tavily account](https://app.tavily.com/) on the free plan and create a
 TAVILY_API_KEY=your_key_here
 SEARCH_MONTHLY_CREDITS=1000
 SEARCH_DAILY_PER_MEMBER=20
-SEARCH_MAX_PAGES=3
+SEARCH_MAX_PAGES=5
 TEXT_AI_MODEL=qwen3:4b
 TEXT_AI_ENABLED=true
 ```
@@ -69,7 +69,7 @@ Keep `EXPO_PUBLIC_API_BASE` in `app/.env` pointed at the laptop's reachable LAN 
 | First-version experience | Typed request, ingredients on hand, exclusions, optional time/protein/calorie limits; up to three sourced choices with reasons, missing ingredients and available nutrition |
 | Public mode and cook ratings | Separate public collection, title search, newest/highest-rated ordering, paste-link import, explicit sharing, copy where permitted, cooked confirmation and 1–5 star ratings |
 
-The ingredients-on-hand field is a device-saved list for matching. Quantity/freshness inventory, pantry-photo intake, expiration reminders, grocery lists, persistent dietary profiles, meal plans and coaching are not part of this change.
+The ingredients-on-hand field shares the current cook’s saved pantry for matching; see [the pantry guide](PANTRY.md), including photo intake and review. Quantity/freshness inventory, expiration reminders, grocery lists, persistent dietary profiles, meal plans and coaching are separate future work.
 
 ## Nutrition data
 
@@ -98,7 +98,7 @@ These are nutrition estimates. Raw/cooked choices, edible weights, preparation l
 
 ## Search and recommendation behavior
 
-Saved family and public recipes are checked first, or public recipes only when selected. A best score of at least 0.55 is treated as a good saved match. If no candidate reaches that threshold and web search is enabled, KitChain makes one basic Tavily request and attempts up to three recipe source pages by default. It then compares the updated catalog. It returns fewer than three choices when fewer qualify, including an empty list when needed.
+Saved family and public recipes are checked first, or public recipes only when selected. A best score of at least 0.55 is treated as a good saved match. If no candidate reaches that threshold and web search is enabled, KitChain makes one basic Tavily request and attempts up to five recipe source pages by default. It then compares the updated catalog. It returns fewer than three choices when fewer qualify, including an empty list when needed.
 
 Tavily's generated answer and snippets are never treated as a finished recipe. The reader needs an actual source page with structured ingredients and directions. Unsupported/blocked pages are skipped with a notice. Pasted recipe links use the same reader without spending a Tavily search credit.
 
@@ -114,7 +114,7 @@ The Tavily adapter is isolated in `backend/app/services/discovery.py`; switching
 
 The global cap defaults to **1,000 basic Tavily searches per UTC calendar month**, shared across every cook on this server. It cannot be raised above 1,000 by configuration in this version. A second cap defaults to 20 per local cook profile per UTC day. Reservations use conditional database updates and are committed **before** an external request, including across concurrent workers. A failed or ambiguous request conservatively keeps its reserved credit.
 
-Repeated searches reuse a recent result for 12 hours, or a no-results attempt for one hour. Cached references, public recipe metadata, derived nutrition and permitted recipe text are retained; raw Tavily content and entire HTML pages are not stored.
+Repeated searches reuse a recent result for 12 hours, or a no-import attempt for two minutes. Cached references, public recipe metadata, derived nutrition and permitted recipe text are retained; raw Tavily content and entire HTML pages are not stored.
 
 Keep paid overages disabled in Tavily and use a dedicated key/account allowance for this app. KitChain's counter covers calls made by this database, not unrelated tools using the same Tavily account. A database restore can also restore older counters. Provider-side limits remain the final billing boundary. Missing keys, quota exhaustion and provider failures leave saved recipe matching available.
 
@@ -140,7 +140,7 @@ Before the cloud/public launch, the deferred hosting/account work must provide r
 
 ## Validation
 
-The [validation record and rendered examples](DISCOVERY_VALIDATION.md) record the completed checks and their limits.
+The [discovery validation record and rendered examples](DISCOVERY_VALIDATION.md) retain the initial checks. The [pantry/keyboard validation record](PANTRY_VALIDATION.md) covers the latest changes and their limits.
 
 Run the automated checks from the repository root:
 

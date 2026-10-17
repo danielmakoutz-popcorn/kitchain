@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str = ""
     SEARCH_MONTHLY_CREDITS: int = 1000
     SEARCH_DAILY_PER_MEMBER: int = 20
-    SEARCH_MAX_PAGES: int = 3
+    SEARCH_MAX_PAGES: int = 5
     TEXT_AI_URL: str = "http://127.0.0.1:11434"
     TEXT_AI_MODEL: str = "qwen3:4b"
     TEXT_AI_ENABLED: bool = True

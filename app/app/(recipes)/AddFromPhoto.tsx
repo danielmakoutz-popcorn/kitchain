@@ -1,6 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, View } from "react-native";
+import { ActivityIndicator, Image, View } from "react-native";
 import { router } from "expo-router";
 import { kitchen as c } from "@/constants/kitchen";
 import { KitchenButton, KitchenHeading, KitchenInput, KitchenNotice, KitchenScroll, KitchenText as Text, PixelFrame, PixelIcon, ReadingRecipe, ScannerFrame, useKitchenDialog } from "@/components/kitchen";
@@ -207,8 +207,7 @@ export default function AddFromPhoto() {
     ]);
   }
 
-  return <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.ivory }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={80}>
-    <KitchenScroll contentContainerStyle={{ paddingBottom: 80 }}>
+  return <KitchenScroll contentContainerStyle={{ paddingBottom: 80 }}>
       <KitchenHeading subtitle="Turn a recipe card into a recipe you can keep.">Add from photo</KitchenHeading>
       {!ready && !storageError && <ActivityIndicator color={c.greenInk} accessibilityLabel="Opening saved draft" />}
       {recovered && <KitchenNotice kind="success">Recovered your unfinished recipe from this device.</KitchenNotice>}
@@ -261,6 +260,5 @@ export default function AddFromPhoto() {
         {showRaw && <Text selectable style={{ color: c.muted }}>{result.raw_text || "No raw response provided."}</Text>}
         <KitchenButton onPress={saveAsRecipe} disabled={busy || !title.trim()} variant="primary" icon="save">{saving ? "Saving…" : "Save recipe"}</KitchenButton>
       </PixelFrame>}
-    </KitchenScroll>
-  </KeyboardAvoidingView>;
+    </KitchenScroll>;
 }

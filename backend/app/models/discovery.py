@@ -37,6 +37,13 @@ class CommunityMember(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Pantry(SQLModel, table=True):
+    member_id: str = Field(primary_key=True, foreign_key="communitymember.id", ondelete="CASCADE")
+    items: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    revision: int = 1
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class PublicRecipe(SQLModel, table=True):
     __table_args__ = {"sqlite_autoincrement": True}  # public links/ratings must never move to a new recipe
     id: int | None = Field(default=None, primary_key=True)
@@ -74,3 +81,9 @@ class SearchCache(SQLModel, table=True):
     key: str = Field(primary_key=True)
     recipe_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON))
     expires_at: datetime
+
+
+class SearchSourceReport(SQLModel, table=True):
+    # Additive companion table, so existing searchcache databases need no ALTER.
+    key: str = Field(primary_key=True)
+    sources: list[dict] = Field(default_factory=list, sa_column=Column(JSON))

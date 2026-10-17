@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
 import re
+import logging
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 import requests
@@ -10,9 +12,9 @@ from sqlmodel import Session, select
 
 from backend.app.core.settings import settings
 from backend.app.models.recipe import Recipe
-from backend.app.models.discovery import PublicRecipe, RecipeInfo, RecipeRating, SearchCache, SearchUsage
+from backend.app.models.discovery import PublicRecipe, RecipeInfo, RecipeRating, SearchCache, SearchUsage, SearchSourceReport
 from backend.app.services.nutrition import calculate, ingredient_hash, normalized, parse_ingredient
-from backend.app.services.recipe_reader import canonical_url, read_recipe, PageReadError
+from backend.app.services.recipe_reader import canonical_url, read_recipe, PageReadError, plain
 from backend.app.services import text_ai
 
 STOPWORDS = set("i me my we us a an the and or with without for to from of in on some something recipe recipes meal meals dinner lunch breakfast want would like please make cook find easy good quick high protein calorie calories low carb carbs gluten free dairy vegan vegetarian under minutes minute less than have using need can you that is it at most least".split())
@@ -127,18 +129,27 @@ def reserve_search(engine, member_id: str, now: datetime | None = None):
                     raise HTTPException(503, "Search is busy. Try again shortly.")
 
 
-def web_search(engine, query: str, member_id: str) -> tuple[list[int], list[str], bool]:
+def source_warnings(sources: list[dict]) -> list[str]:
+    return [f"{len(sources)} source page(s) could not be imported. You can open their original websites below or try another recipe source."] if sources else []
+
+
+def web_search(engine, query: str, member_id: str) -> tuple[list[int], list[str], bool, list[dict]]:
     if not settings.TAVILY_API_KEY:
-        return [], ["Web search is not set up yet. Saved recipe matching still works."], False
-    fingerprint = hashlib.sha256(query.encode()).hexdigest()
+        return [], ["Web search is not set up yet. Saved recipe matching still works."], False, []
+    fingerprint = hashlib.sha256(("reader-v2:" + query).encode()).hexdigest()
     with Session(engine) as session:
         cached = session.get(SearchCache, fingerprint)
         if cached and cached.expires_at > datetime.utcnow():
-            return cached.recipe_ids, ["Reused a recent search without spending a credit."], False
+            report = session.get(SearchSourceReport, fingerprint)
+            sources = report.sources if report else []
+            notice = "Reused a recent search without spending a credit."
+            if not cached.recipe_ids:
+                notice += " This attempt found no importable recipes; try another query or retry after two minutes."
+            return cached.recipe_ids, [notice] + source_warnings(sources), False, sources
     try:
         reserve_search(engine, member_id)
     except HTTPException as error:
-        return [], [error.detail], False
+        return [], [error.detail], False, []
     try:
         response = requests.post("https://api.tavily.com/search", headers={"Authorization": f"Bearer {settings.TAVILY_API_KEY}"}, json={
             "query": query + " recipe ingredients directions", "topic": "general", "search_depth": "basic",
@@ -150,29 +161,37 @@ def web_search(engine, query: str, member_id: str) -> tuple[list[int], list[str]
         if not isinstance(results, list):
             raise ValueError("Invalid search response")
     except (requests.RequestException, KeyError, ValueError, TypeError):
-        return [], ["The web search could not finish. Your collection is still available; a reserved search credit may have been used."], True
-    ids, failures = [], 0
+        return [], ["The web search could not finish. Your collection is still available; a reserved search credit may have been used."], True, []
+    ids, sources = [], []
     for result in results[:max(1, min(settings.SEARCH_MAX_PAGES, 5))]:
+        url = ""
         try:
             if not isinstance(result, dict):
                 raise PageReadError("Unreadable search result")
-            data = read_recipe(result.get("url", ""))
+            url = canonical_url(result.get("url", ""))
+            data = read_recipe(url)
             with Session(engine) as session:
                 record = save_web_recipe(session, data)
                 ids.append(record.id)
-        except (PageReadError, ValueError, TypeError, RecursionError):
-            failures += 1
+        except (PageReadError, ValueError, TypeError, RecursionError) as error:
+            reason = str(error) if isinstance(error, PageReadError) else "This page did not provide a complete readable recipe."
+            # Keep useful, attributable links without turning snippets into verified recipes.
+            if url and "local or private network" not in reason:
+                sources.append({"url": url, "title": plain(result.get("title") or urlsplit(url).hostname, 160), "reason": reason})
+            logging.getLogger(__name__).info("Recipe source import failed for %s%s: %s", urlsplit(url).hostname, urlsplit(url).path, reason)
     with Session(engine) as session:
         cached = session.get(SearchCache, fingerprint) or SearchCache(key=fingerprint, expires_at=datetime.utcnow())
         cached.recipe_ids = list(dict.fromkeys(ids))
-        cached.expires_at = datetime.utcnow() + timedelta(hours=12 if ids else 1)
+        cached.expires_at = datetime.utcnow() + (timedelta(hours=12) if ids else timedelta(minutes=2))
         session.add(cached)
+        report = session.get(SearchSourceReport, fingerprint) or SearchSourceReport(key=fingerprint)
+        report.sources = sources
+        session.add(report)
         try:
             session.commit()
         except IntegrityError:
             session.rollback()  # another simultaneous search already cached the same request
-    warnings = [f"{failures} source page(s) could not be read; no substitute recipe was invented."] if failures else []
-    return ids, warnings, True
+    return ids, source_warnings(sources), True, sources
 
 
 def catalog_candidates(session: Session, payload, meaning=None) -> list[dict]:

@@ -24,5 +24,5 @@ export type Recommendation = {
   total_minutes: number | null; servings: number | null; nutrition: Nutrition;
   missing_ingredients: string[]; reasons: string[]; rating_average: number | null; rating_count: number;
 };
-export type RecommendationResult = { choices: Recommendation[]; searched_web: boolean; text_ai_used: boolean; warnings: string[]; notice: string; usage: SearchUsage };
+export type RecommendationResult = { choices: Recommendation[]; searched_web: boolean; text_ai_used: boolean; warnings: string[]; unread_sources?: { title: string; url: string; reason: string }[]; notice: string; usage: SearchUsage };
 export type RecommendInput = { query: string; pantry: string[]; excluded: string[]; max_minutes?: number; min_protein?: number; max_calories?: number; mode: "family" | "public"; allow_web: boolean };

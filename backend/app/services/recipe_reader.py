@@ -8,6 +8,9 @@ import math
 import re
 import socket
 import ssl
+import gzip
+import zlib
+from io import BytesIO
 from urllib.parse import urljoin, urlsplit, urlunsplit, parse_qsl, urlencode
 from urllib.robotparser import RobotFileParser
 
@@ -22,6 +25,8 @@ class PageReadError(ValueError):
 
 
 def canonical_url(url: str) -> str:
+    if not isinstance(url, str):
+        raise PageReadError("Use a public HTTP or HTTPS recipe page.")
     parsed = urlsplit(url.strip())
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
         raise PageReadError("Use a public HTTP or HTTPS recipe page.")
@@ -61,7 +66,7 @@ def fetch_page(url: str, max_bytes: int = MAX_PAGE_BYTES) -> tuple[str, str, int
                       if parts.scheme == "https" else http.client.HTTPConnection(parts.hostname, port, timeout=8))
         connection._create_connection = lambda _addr, timeout=8, source_address=None: socket.create_connection((address, port), timeout, source_address)
         try:
-            connection.request("GET", urlunsplit(("", "", parts.path or "/", parts.query, "")), headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain", "Accept-Encoding": "identity"})
+            connection.request("GET", urlunsplit(("", "", parts.path or "/", parts.query, "")), headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain", "Accept-Encoding": "gzip, deflate"})
             response = connection.getresponse()
             if response.status in {301, 302, 303, 307, 308}:
                 location = response.getheader("Location")
@@ -75,9 +80,18 @@ def fetch_page(url: str, max_bytes: int = MAX_PAGE_BYTES) -> tuple[str, str, int
             raw = response.read(max_bytes + 1)
             if len(raw) > max_bytes:
                 raise PageReadError("Recipe page is too large. Open the source website instead.")
-            if encoding != "identity":
-                # Request identity to keep decompression work bounded.
-                raise PageReadError("This website requires an unsupported compressed response.")
+            try:
+                if encoding in {"gzip", "x-gzip"}:
+                    with gzip.GzipFile(fileobj=BytesIO(raw)) as stream:
+                        raw = stream.read(max_bytes + 1)
+                elif encoding == "deflate":
+                    raw = zlib.decompressobj().decompress(raw, max_bytes + 1)
+                elif encoding != "identity":
+                    raise PageReadError("This website uses an unsupported page format. Open the original recipe in your browser.")
+            except (OSError, EOFError, zlib.error) as error:
+                raise PageReadError("The website returned unreadable compressed content. Open its original recipe.") from error
+            if len(raw) > max_bytes:
+                raise PageReadError("Recipe page is too large. Open the source website instead.")
             content_type = response.getheader("Content-Type", "").lower()
             if "text/" not in content_type and "json" not in content_type:
                 raise PageReadError("This address does not return a readable recipe page.")
@@ -219,7 +233,9 @@ def read_recipe(url: str, _origins: frozenset[str] = frozenset()) -> dict:
             raise PageReadError("This website does not permit automated recipe reading. Open its original page instead.")
     final, html, status = fetch_page(url)
     if status != 200:
-        raise PageReadError("The recipe website could not be read. Open the original page instead.")
+        if status in {401, 403, 429}:
+            raise PageReadError(f"This website blocked automatic importing (HTTP {status}). Open the original recipe in your browser, or try another publisher.")
+        raise PageReadError(f"The recipe website returned HTTP {status}. Open the original page, or try another publisher.")
     # A cross-origin redirect needs that origin's robots permission as well.
     if urlsplit(final).netloc != parts.netloc:
         return read_recipe(final, _origins | {parts.netloc})

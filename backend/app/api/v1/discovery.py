@@ -8,20 +8,24 @@ import hashlib
 import secrets
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, File
+from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.app.core.settings import settings
 from backend.app.db.session import engine
-from backend.app.discovery_schemas import MemberCreate, RatingInput, NutritionInput, RecommendInput, ImportInput, PublishInput
+from backend.app.discovery_schemas import MemberCreate, RatingInput, NutritionInput, RecommendInput, ImportInput, PublishInput, PantryInput
 from backend.app.models.recipe import Recipe
-from backend.app.models.discovery import CommunityMember, NutritionFood, PublicRecipe, RecipeInfo, RecipeRating, SearchUsage
+from backend.app.models.discovery import CommunityMember, NutritionFood, PublicRecipe, RecipeInfo, RecipeRating, SearchUsage, Pantry
 from backend.app.services import text_ai
 from backend.app.services.discovery import catalog_candidates, nutrition_summary, save_web_recipe, web_search
 from backend.app.services.nutrition import calculate, food_candidates, ingredient_hash, normalized, parse_ingredient
 from backend.app.services.recipe_reader import canonical_url, read_recipe, PageReadError
+from backend.app.services import pantry_vision
+from PIL import Image, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
+import requests
 
 router = APIRouter()
 
@@ -65,6 +69,60 @@ def create_member(payload: MemberCreate):
 @router.get("/community/me")
 def get_member(member: CommunityMember = Depends(current_member)):
     return {"id": member.id, "name": member.name}
+
+
+@router.get("/pantry")
+def get_pantry(member: CommunityMember = Depends(current_member)):
+    with Session(engine) as session:
+        pantry = session.get(Pantry, member.id)
+        return {"items": pantry.items if pantry else [], "revision": pantry.revision if pantry else 0}
+
+
+@router.put("/pantry")
+def save_pantry(payload: PantryInput, member: CommunityMember = Depends(current_member)):
+    with Session(engine) as session:
+        try:
+            if payload.revision == 0:
+                session.add(Pantry(member_id=member.id, items=payload.items))
+                session.commit()
+            else:
+                changed = session.execute(update(Pantry).where(Pantry.member_id == member.id,
+                    Pantry.revision == payload.revision).values(items=payload.items,
+                    revision=payload.revision + 1, updated_at=datetime.utcnow())).rowcount
+                if changed != 1:
+                    raise HTTPException(409, "Your pantry changed elsewhere. Reload the saved pantry before saving again; your edits are still on screen.")
+                session.commit()
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(409, "Your pantry changed elsewhere. Reload the saved pantry before saving again; your edits are still on screen.")
+        pantry = session.get(Pantry, member.id)
+        return {"items": pantry.items, "revision": pantry.revision}
+
+
+@router.post("/pantry/photo")
+async def pantry_photo(file: UploadFile = File(...), member: CommunityMember = Depends(current_member)):
+    # The image and suggestions are not stored; only a later explicit PUT changes the pantry.
+    if file.content_type not in {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}:
+        raise HTTPException(415, "Choose a JPEG, PNG, WebP, or supported HEIC ingredient photo.")
+    raw = await file.read(20 * 1024 * 1024 + 1)
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(413, "Choose an ingredient photo smaller than 20 MB.")
+    if not raw:
+        raise HTTPException(400, "This photo is empty. Choose another photo.")
+    try:
+        return await run_in_threadpool(pantry_vision.read_ingredients, raw)
+    except pantry_vision.PantryBusy:
+        raise HTTPException(503, "Another pantry photo is being read. Try again in a moment.")
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise HTTPException(413, "Choose an ingredient photo with smaller dimensions.")
+    except requests.Timeout:
+        raise HTTPException(504, "The ingredient scan took too long. Try a closer photo or enter the names manually.")
+    except requests.RequestException:
+        raise HTTPException(503, "The ingredient AI is unavailable. Check that Ollama and qwen2.5vl:3b are running, or enter names manually.")
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "Could not read this photo. Try a JPEG or PNG image.")
+    except (ValueError, TypeError, KeyError):
+        raise HTTPException(502, "The AI could not identify a clear ingredient list. Try a closer photo or enter the names manually.")
 
 
 @router.get("/nutrition/status")
@@ -275,13 +333,14 @@ def recommend(payload: RecommendInput, member: CommunityMember = Depends(current
     with Session(engine) as session:
         candidates = catalog_candidates(session, payload, meaning)
     searched = False
+    unread_sources = []
     if payload.allow_web and (not candidates or candidates[0]["score"] < .55):
-        query = payload.query
+        query = " ".join(meaning.keywords[:6]) if meaning and meaning.keywords else payload.query
         if payload.pantry:
             query += " using " + ", ".join(payload.pantry[:8])
         if payload.excluded:
             query += " without " + ", ".join(payload.excluded[:8])
-        _, notices, searched = web_search(engine, query[:400], member.id)
+        _, notices, searched, unread_sources = web_search(engine, query[:400], member.id)
         warnings.extend(notices)
         with Session(engine) as session:
             candidates = catalog_candidates(session, payload, meaning)
@@ -298,5 +357,5 @@ def recommend(payload: RecommendInput, member: CommunityMember = Depends(current
                 choice["rating_average"], choice["rating_count"] = view["rating_average"], view["rating_count"]
             else:
                 choice["rating_average"], choice["rating_count"] = None, 0
-    return {"choices": choices, "searched_web": searched, "text_ai_used": meaning is not None, "warnings": warnings,
+    return {"choices": choices, "searched_web": searched, "text_ai_used": meaning is not None, "warnings": warnings, "unread_sources": unread_sources,
         "notice": "Recommendations use the recorded ingredients. Missing ingredients and macros are estimates; check the source and labels for allergies. Recipes with unknown time or nutrition are excluded when those limits are requested.", "usage": discovery_status()}

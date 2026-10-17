@@ -1,5 +1,5 @@
 import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text as NativeText, TextInput, View, type ScrollViewProps, type TextInputProps, type TextProps, type ViewProps } from "react-native";
+import { ActivityIndicator, Keyboard, Platform, ScrollView, StyleSheet, Text as NativeText, TextInput, View, type ScrollViewProps, type TextInputProps, type TextProps, type ViewProps } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { kitchen as c, kitchenFonts } from "@/constants/kitchen";
 import { ArtSlot } from "@/components/ArtSlot";
@@ -15,7 +15,7 @@ export function KitchenScreen({ style, ...props }: ViewProps) {
   return <View {...props} style={[{ flex: 1, backgroundColor: c.ivory, paddingHorizontal: 18 }, style]} />;
 }
 export function KitchenScroll({ contentContainerStyle, style, ...props }: ScrollViewProps) {
-  return <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" {...props} style={[{ flex: 1, backgroundColor: c.ivory }, style]} contentContainerStyle={[{ padding: 18, paddingBottom: 48, gap: 16, width: "100%", maxWidth: 760, alignSelf: "center" }, contentContainerStyle]} />;
+  return <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} automaticallyAdjustKeyboardInsets={Platform.OS === "ios"} {...props} style={[{ flex: 1, backgroundColor: c.ivory }, style]} contentContainerStyle={[{ padding: 18, paddingBottom: 64, gap: 16, width: "100%", maxWidth: 760, alignSelf: "center" }, contentContainerStyle]} />;
 }
 
 type ButtonProps = ComponentPropsWithoutRef<typeof HapticPressable> & {
@@ -40,7 +40,7 @@ export const KitchenInput = forwardRef<TextInput, TextInputProps & { label?: str
   return <View style={[{ gap: 6 }, containerStyle]}>
     {label && <KitchenText style={{ fontWeight: "700" }}>{label}</KitchenText>}
     <PixelFrame fill={c.ivory} shadow={false} contentStyle={{ padding: 4 }} style={editable === false ? { opacity: 0.65 } : undefined}>
-      <TextInput ref={ref} placeholderTextColor={c.muted} accessibilityLabel={label} {...props} editable={editable} multiline={multiline} textAlignVertical={multiline ? "top" : "center"} style={[{ color: c.espresso, fontSize: 16, lineHeight: 24, minHeight: multiline ? 116 : 44, paddingHorizontal: 12, paddingVertical: 10 }, style]} />
+      <TextInput ref={ref} placeholderTextColor={c.muted} accessibilityLabel={label} returnKeyType={multiline ? undefined : "done"} onSubmitEditing={multiline ? undefined : Keyboard.dismiss} {...props} editable={editable} multiline={multiline} textAlignVertical={multiline ? "top" : "center"} style={[{ color: c.espresso, fontSize: 16, lineHeight: 24, minHeight: multiline ? 116 : 44, paddingHorizontal: 12, paddingVertical: 10 }, style]} />
     </PixelFrame>
   </View>;
 });

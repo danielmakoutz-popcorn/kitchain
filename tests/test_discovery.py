@@ -321,6 +321,24 @@ class DiscoveryTests(LocalApiTests):
         self.assertNotIn("Invented recipe", json.dumps(first))
         self.assertEqual(search.call_count, 1)
         self.assertFalse(second["searched_web"])
+        self.assertEqual(first["unread_sources"][0]["url"], "https://recipes.example/broken")
+        self.assertEqual(second["unread_sources"], first["unread_sources"])
+        self.assertIn("two minutes", " ".join(second["warnings"]))
+
+    def test_search_can_use_a_later_publisher_when_earlier_pages_block_imports(self):
+        from backend.app.services import discovery
+        from backend.app.services.recipe_reader import PageReadError
+        self.settings.TAVILY_API_KEY = "synthetic-key"
+        response = Mock()
+        response.json.return_value = {"results": [{"url": f"https://recipes.example/{i}", "title": f"Recipe source {i}"} for i in range(4)]}
+        replies = [PageReadError("Website blocked automatic importing") for _ in range(3)] + [self.web_recipe()]
+        with patch.object(discovery.requests, "post", return_value=response) as search, patch.object(discovery, "read_recipe", side_effect=replies) as reader:
+            result = self.recommend(allow_web=True)
+        self.assertEqual(search.call_count, 1)
+        self.assertEqual(reader.call_count, 4)
+        self.assertEqual(result["usage"]["monthly_used"], 1)
+        self.assertEqual(len(result["unread_sources"]), 3)
+        self.assertEqual(len(result["choices"]), 1)
 
     def test_repeated_url_import_keeps_one_public_entry_and_its_ratings(self):
         from backend.app.services import recipe_reader

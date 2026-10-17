@@ -34,14 +34,18 @@ const server = http.createServer((req, res) => {
   if (!ready) { backend.kill('SIGTERM'); throw new Error('Disposable API did not start: ' + backendLog); }
   await new Promise(resolve => server.listen(8028, '127.0.0.1', resolve));
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE || undefined, args: ['--no-sandbox', '--disable-dev-shm-usage'], headless: true });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
   page.setDefaultTimeout(15000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   const origin = 'http://127.0.0.1:8028';
   async function shot(name) { await page.screenshot({ path: path.join(out, `${name}.png`), fullPage: true }); }
   async function noOverflow() { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Horizontal overflow'); }
   try {
+    await page.goto(origin);
+    await page.evaluate(() => localStorage.setItem('kitchain-discovery-pantry:http://127.0.0.1:8017', 'Rice, bell pepper'));
     await page.goto(origin + '/discover');
+    await page.waitForFunction(() => document.querySelector('[aria-label="Ingredients I have · comma or line separated"]')?.value === 'Rice\nbell pepper');
     await page.getByRole('textbox', { name: 'What sounds good?', exact: true }).fill('rice');
     await page.getByRole('button', { name: 'Find three recipe ideas', exact: true }).click();
     await page.getByRole('heading', { name: "Grandma's rice", exact: true }).waitFor();
@@ -102,11 +106,12 @@ const server = http.createServer((req, res) => {
     await noOverflow(); await shot('public-collection');
     assert.equal(await page.getByRole('button', { name: "Open Grandma's rice", exact: true }).count(), 0);
 
+    await require('./check_pantry_ui.cjs')({ page, browser, origin, noOverflow, shot });
     for (const width of [320, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
-      for (const route of ['/discover', '/public']) {
+      for (const route of ['/discover', '/public', '/pantry']) {
         await page.goto(origin + route);
-        await page.getByRole('heading', { name: route === '/public' ? 'The public recipe table' : 'What should we cook?', exact: true }).waitFor();
+        await page.getByRole('heading', { name: route === '/public' ? 'The public recipe table' : route === '/pantry' ? 'My pantry' : 'What should we cook?', exact: true }).waitFor();
         await noOverflow();
       }
     }

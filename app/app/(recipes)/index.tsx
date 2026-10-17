@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, FlatList, RefreshControl } from "react-native";
+import { View, FlatList, Platform, RefreshControl } from "react-native";
 import { ArtSlot } from "@/components/ArtSlot";
 import { kitchen as c } from "@/constants/kitchen";
 import { KitchenButton, KitchenHeading, KitchenNotice, KitchenScreen, KitchenSearch, KitchenText as Text, PixelIcon } from "@/components/kitchen";
@@ -58,7 +58,7 @@ export default function RecipeList() {
     {loading && data.length === 0 && <KitchenNotice>Opening your recipe cards…</KitchenNotice>}
   </View>;
   return <KitchenScreen>
-    <FlatList data={matches} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+    <FlatList data={matches} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
       contentContainerStyle={{ width: "100%", maxWidth: 760, alignSelf: "center", paddingBottom: 40 }}
       ListHeaderComponent={header} keyExtractor={item => String(item.id)}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={c.greenInk} colors={[c.greenInk]} />}
