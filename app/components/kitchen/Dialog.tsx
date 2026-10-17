@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { Modal, ScrollView, View, type AlertButton } from "react-native";
+import { Keyboard, Modal, ScrollView, View, type AlertButton } from "react-native";
 import { kitchen as c, kitchenFonts } from "@/constants/kitchen";
 import { ArtSlot } from "@/components/ArtSlot";
 import { KitchenButton, KitchenText } from "./Controls";
@@ -14,6 +14,7 @@ export function KitchenDialogProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<DialogRequest[]>([]);
   const choosing = useRef(false);
   const alert = useCallback((title: string, message?: string, buttons?: AlertButton[]) => {
+    Keyboard.dismiss();
     setQueue(prev => [...prev, { title, message, buttons: buttons?.length ? buttons : [{ text: "Done" }] }]);
   }, []);
   const value = useMemo(() => ({ alert }), [alert]);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Image, KeyboardAvoidingView, Platform, Linking } from "react-native";
+import { View, Image, Linking } from "react-native";
 import { kitchen as c, kitchenFonts } from "@/constants/kitchen";
 import { KitchenButton, KitchenHeading, KitchenInput, KitchenNotice, KitchenScroll, KitchenText as Text, PixelFrame, PixelIcon, Flourish, useKitchenDialog } from "@/components/kitchen";
 import { feedback } from "@/lib/haptics";
@@ -198,8 +198,7 @@ function RecipeDetailContent({ id }: { id: string }) {
     <KitchenButton icon="back" onPress={() => router.back()}>Back</KitchenButton>
   </KitchenScroll>;
   if (!recipe) return <KitchenScroll><KitchenNotice>Recipe not found.</KitchenNotice></KitchenScroll>;
-  if (isEditing) return <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.ivory }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={80}>
-    <KitchenScroll contentContainerStyle={{ paddingBottom: 80 }}>
+  if (isEditing) return <KitchenScroll contentContainerStyle={{ paddingBottom: 80 }}>
       <KitchenHeading>Make it your own</KitchenHeading>
       <PixelFrame ornate contentStyle={{ padding: 24, gap: 16 }}>
         {photoUri ? <Image source={{ uri: photoUri }} accessibilityLabel="Recipe photo" resizeMode="contain" style={{ width: "100%", height: 220, backgroundColor: c.ivory }} /> : null}
@@ -211,8 +210,7 @@ function RecipeDetailContent({ id }: { id: string }) {
         <KitchenButton onPress={saveEdits} disabled={busy} variant="primary" icon="save">{busy ? "Working…" : "Save changes"}</KitchenButton>
         <KitchenButton disabled={busy} onPress={cancelEdits}>Cancel</KitchenButton>
       </PixelFrame>
-    </KitchenScroll>
-  </KeyboardAvoidingView>;
+    </KitchenScroll>;
 
   const ingredients = textToList(listToText(recipe.ingredients));
   const allSteps = textToList(listToText(recipe.steps));

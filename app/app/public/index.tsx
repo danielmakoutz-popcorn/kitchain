@@ -14,6 +14,7 @@ export default function PublicCollection() {
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
+  const [importError, setImportError] = useState("");
   const [more, setMore] = useState(false);
   const sequence = useRef(0);
   const importLock = useRef(false);
@@ -32,9 +33,9 @@ export default function PublicCollection() {
   async function importRecipe() {
     if (importLock.current || !url.trim()) return;
     if (!/^https?:\/\//i.test(url.trim())) return setError("Paste the full http:// or https:// recipe address.");
-    importLock.current = true; setImporting(true); setError("");
+    importLock.current = true; setImporting(true); setImportError("");
     try { const recipe = await discoveryApi.importLink(url.trim()); setUrl(""); router.push(`/public/${recipe.id}`); }
-    catch (e: any) { setError(e.message); }
+    catch (e: any) { setImportError(e.message); }
     finally { importLock.current = false; setImporting(false); }
   }
 
@@ -65,7 +66,13 @@ export default function PublicCollection() {
       <KitchenText>This adds a public source card. Full instructions are kept here when the source permits reuse.</KitchenText>
       <KitchenInput label="Published recipe URL" value={url} onChangeText={setUrl} editable={!importing} autoCapitalize="none" autoCorrect={false} keyboardType="url" maxLength={2048} placeholder="https://…" />
       <KitchenButton variant="primary" disabled={importing || !url.trim()} onPress={importRecipe}>{importing ? "Reading recipe page…" : "Add recipe from link"}</KitchenButton>
-      {!!error && /^https?:\/\//i.test(url.trim()) && <KitchenButton onPress={() => void Linking.openURL(url.trim())}>Open original website</KitchenButton>}
+      {!!importError && <KitchenNotice kind="error" title="This recipe could not be imported">{importError}</KitchenNotice>}
+      {!!importError && <>
+        <KitchenText>Some websites block automatic reading or use a format KitChain cannot read. Open the original recipe in your browser, try a link from another publisher, or enter its ingredients and your own cooking notes in a family recipe.</KitchenText>
+        {/^https?:\/\//i.test(url.trim()) && <KitchenButton onPress={() => void Linking.openURL(url.trim())}>Open original website</KitchenButton>}
+        <Link href="/(recipes)/AddRecipe" asChild><KitchenButton>Write a family recipe manually</KitchenButton></Link>
+        <Link href={{ pathname: "/discover", params: { mode: "public" } }} asChild><KitchenButton>Find a recipe from another source</KitchenButton></Link>
+      </>}
     </PixelFrame>
   </KitchenScroll>;
 }

@@ -11,6 +11,7 @@
       "supportsTablet": true
     },
     "android": {
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -38,6 +39,14 @@
         }
       ],
       "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose photos of recipes or pantry ingredients for KitChain.",
+          "cameraPermission": "Take photos of ingredients to review and add to your KitChain pantry.",
+          "microphonePermission": false
+        }
+      ],
       "expo-image",
       "expo-web-browser",
       "expo-status-bar"

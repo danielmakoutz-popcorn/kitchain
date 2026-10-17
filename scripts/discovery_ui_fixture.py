@@ -19,7 +19,7 @@ def create_app():
     from backend.app.core.settings import settings
     from backend.app.db.session import engine
     from backend.app.models.recipe import Recipe
-    from backend.app.services.recipe_reader import extract_recipe
+    from backend.app.services.recipe_reader import extract_recipe, PageReadError
     from backend.app.services import discovery
     from backend.app.api.v1 import discovery as routes
 
@@ -31,6 +31,8 @@ def create_app():
     def source_recipe(url):
         if not url.startswith("https://recipes.example/"):
             raise ValueError("Only synthetic source pages are available in this fixture")
+        if "/blocked" in url:
+            raise PageReadError("This website blocked automatic importing (HTTP 403). Open the original recipe in your browser, or try another publisher.")
         licensed = "/licensed" in url
         data = {"@type": "Recipe", "name": "Published rice bowl" if licensed else "Published chicken and rice",
             "author": {"@type": "Person", "name": "Recipe Author"}, "publisher": {"name": "Synthetic Test Kitchen"},
@@ -41,15 +43,22 @@ def create_app():
         return extract_recipe('<script type="application/ld+json">' + json.dumps(data) + '</script>', url)
 
     class SearchReply:
+        def __init__(self, body=None):
+            self.body = body or {"results": [{"url": "https://recipes.example/chicken"}]}
+
         def raise_for_status(self):
             pass
 
         def json(self):
-            return {"results": [{"url": "https://recipes.example/chicken"}]}
+            return self.body
 
     def search(url, **_kwargs):
+        if url == "http://localhost:11434/api/generate":
+            return SearchReply({"response": json.dumps({"ingredients": ["Rice", "Bell pepper"], "uncertain_items": ["Green herb"]})})
         if url != "https://api.tavily.com/search":
             raise AssertionError("Browser fixture cannot make other external requests")
+        if "blocked" in _kwargs.get("json", {}).get("query", ""):
+            return SearchReply({"results": [{"url": "https://recipes.example/blocked", "title": "Blocked published recipe"}]})
         return SearchReply()
 
     discovery.read_recipe = routes.read_recipe = source_recipe

@@ -6,7 +6,9 @@ The engineering evidence includes structured API/data models, image-intake paths
 
 **Visual pass:** [warm-kitchen design](docs/KITCHEN_DESIGN.md), with live parchment frames, themed controls/dialogs and open slots for Daniel’s artwork.
 
-**Current work:** [nutrition, recommendations and the public recipe table](docs/DISCOVERY.md): self-hosted USDA data, Tavily only when saved matches are weak, a separate local text model, source credit, cook ratings and nutrition corrections. This branch includes the kitchen design and keeps the photo scanner unchanged.
+**Latest update:** [private pantry, keyboard handling and blocked-source guidance](docs/PANTRY.md).
+
+**Discovery foundation:** [nutrition, recommendations and the public recipe table](docs/DISCOVERY.md): self-hosted USDA data, Tavily only when saved matches are weak, a separate local text model, source credit, cook ratings and nutrition corrections. This branch includes the kitchen design and keeps the photo scanner unchanged.
 
 The [scanner review](docs/UPGRADE_REVIEW.md) and [earlier validation record](docs/VALIDATION.md) retain the previous implementation details and checks.
 

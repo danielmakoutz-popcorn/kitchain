@@ -2,10 +2,16 @@ import { fetch } from "expo/fetch";
 import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Food, IngredientOverride, Nutrition, PublicRecipe, RecommendationResult, RecommendInput, SearchUsage } from "./discovery-types";
+import type { Pantry, PantryPhoto } from "./pantry";
 
 export const API_BASE = String(Constants.expoConfig?.extra?.apiBase || process.env.EXPO_PUBLIC_API_BASE || "").replace(/\/+$/, "");
 const PROFILE_KEY = `kitchain-community-profile:${API_BASE}`;
-let profilePromise: Promise<void> | null = null;
+type CookProfile = { id: string; name: string };
+let profilePromise: Promise<CookProfile> | null = null;
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
 
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (!API_BASE) throw new Error("Set EXPO_PUBLIC_API_BASE to your KitChain server address, then restart Expo.");
@@ -25,7 +31,7 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
       if (typeof body.detail === "string") message = body.detail;
       else if (Array.isArray(body.detail) && body.detail[0]?.msg) message = `${body.detail[0].loc?.slice(1).join(" · ") || "Request"}: ${body.detail[0].msg}`;
     } catch { /* Keep the status when a server/proxy sends a non-JSON error. */ }
-    throw new Error(message);
+    throw new ApiError(message, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -43,14 +49,19 @@ export const api = {
   }) => requestJson<any>("/api/v1/recipes/", { method: "POST", body: JSON.stringify(data) }),
 };
 
-async function ensureCook() {
+export async function ensureCook() {
   profilePromise ??= (async () => {
     const token = await AsyncStorage.getItem(PROFILE_KEY);
     if (token) {
-      try { await requestJson("/api/v1/community/me"); return; } catch { /* A reset local server may no longer know this profile. */ }
+      try { return await requestJson<CookProfile>("/api/v1/community/me"); }
+      catch (error) {
+        // Network/server errors must never silently replace the owner of a private pantry.
+        if (!(error instanceof ApiError) || error.status !== 401) throw error;
+      }
     }
-    const profile = await requestJson<{ token: string }>("/api/v1/community/members", { method: "POST", body: JSON.stringify({ name: "Home cook" }) });
+    const profile = await requestJson<CookProfile & { token: string }>("/api/v1/community/members", { method: "POST", body: JSON.stringify({ name: "Home cook" }) });
     await AsyncStorage.setItem(PROFILE_KEY, profile.token);
+    return { id: profile.id, name: profile.name };
   })().catch(error => { profilePromise = null; throw error; });
   return profilePromise;
 }
@@ -75,6 +86,12 @@ export const discoveryApi = {
   recipeSource: (id: number | string) => requestJson<Nutrition["provenance"]>(`/api/v1/nutrition/recipes/${id}/source`),
   saveNutrition: (id: number | string, data: { servings: number | null; ingredient_hash: string; overrides: Record<string, IngredientOverride> }) => requestJson<Nutrition>(`/api/v1/nutrition/recipes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   foods: (query: string) => requestJson<Food[]>(`/api/v1/nutrition/foods?q=${encodeURIComponent(query)}`),
+};
+
+export const pantryApi = {
+  get: () => cookRequest<Pantry>("/api/v1/pantry"),
+  save: (data: Pantry) => cookRequest<Pantry>("/api/v1/pantry", { method: "PUT", body: JSON.stringify(data) }),
+  photo: (body: FormData, signal?: AbortSignal) => cookRequest<PantryPhoto>("/api/v1/pantry/photo", { method: "POST", body, signal }),
 };
 
 export function tryParse<T>(schema: { parse: (v: unknown) => T }, data: any): T {

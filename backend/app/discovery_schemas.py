@@ -1,4 +1,5 @@
 from typing import Literal
+import re
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
@@ -52,3 +53,16 @@ class ImportInput(StrictInput):
 class PublishInput(StrictInput):
     own_recipe: Literal[True]
     servings: float | None = Field(default=None, ge=.01, le=10000)
+
+
+class PantryInput(StrictInput):
+    items: list[str] = Field(max_length=80)
+    revision: int = Field(ge=0, strict=True)
+
+    @field_validator("items")
+    @classmethod
+    def ingredient_names(cls, value):
+        clean = [re.sub(r"\s+", " ", item).strip() for item in value]
+        if any(not item or len(item) > 100 for item in clean):
+            raise ValueError("Use ingredient names of 1–100 characters, with up to 80 pantry items.")
+        return list({item.casefold(): item for item in clean}.values())
