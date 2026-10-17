@@ -1,5 +1,7 @@
 # KitChain — validation evidence
 
+**Historical record:** this page describes the October 8 inspection. Several listed gaps are now addressed by the [scanner polish update](UPGRADE_REVIEW.md); use that page for current checks and remaining work.
+
 Recorded **2026-10-09 UTC / 2026-10-08 Pacific**. Application source inspected at [`ecff65a`](https://github.com/danielmakoutz-popcorn/kitchain/commit/ecff65ae6585cfd09c615ae4bc33d159d29f6b5c). The validator was added with this documentation update; application code was unchanged.
 
 ## Executed: synthetic text parsing

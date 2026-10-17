@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     ENV: str = "dev"
 
     # --- Database ---
-    DB_URL: str = "sqlite+aiosqlite:///./kitchain.db"  # main runtime DB
+    DB_URL: str = "sqlite:///./kitchain.db"  # active routes use synchronous SQLModel sessions
     DATABASE_URL: str = DB_URL  # initialized below in __init__
 
     # --- JWT / Security ---

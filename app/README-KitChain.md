@@ -8,63 +8,40 @@ These files drop into your Expo project to wire up:
 
 ## Quick Start
 
-1) Create project (once):
+Use the existing project and its lockfile. The app targets **Expo SDK 57**, matching the SDK 57 Expo Go client, with Node.js 24 LTS (at least 24.3).
+
+From this `app` folder:
 
 ```bash
-npx create-expo-app app
-cd app
-npx expo install expo-router expo-image-picker expo-constants
-npm i zod
+npm ci
+cp .env.example .env
 ```
 
-2) Enable router in `app.json`:
-```json
-{
-  "expo": {
-    "plugins": ["expo-router"],
-    "experiments": { "typedRoutes": true }
-  }
-}
-```
+Keep an existing `.env` instead of overwriting it. Set its API address to your computer's reachable LAN address:
 
-3) Copy the files from this pack into your Expo project root so paths look like:
-
-```
-app/
-  _layout.tsx
-  index.tsx
-  (recipes)/
-    index.tsx
-    [id].tsx
-    AddRecipe.tsx
-    AddFromPhoto.tsx
-components/
-  RecipeCard.tsx
-lib/
-  api.ts
-  types.ts
-app.config.js
-.env
-```
-
-4) Create `.env` from example and set your FastAPI base:
-```
+```dotenv
 EXPO_PUBLIC_API_BASE=http://<LAN_IP>:8000
 ```
 
-5) Run:
+Start the backend as described in the [repository README](../README.md), then stop any old Expo server and run:
+
 ```bash
-npx expo start
+npx expo start --clear
 ```
 
-Open on your phone via Expo Go (same Wi‑Fi as the backend).
+Scan the new QR code using the iPhone camera and open in Expo Go. Keep both devices on the same Wi-Fi and allow local-network access. The [PR walkthrough](../docs/TRY_PR.md) explains fetching the updated branch and troubleshooting an SDK mismatch.
 
 ## Backend endpoints expected
 
-- `GET /health` → `{ "status": "ok" }`
-- `POST /recipes/scan` → `{ "text": "..." }`
-- `GET /recipes` → list of recipes
-- `GET /recipes/{id}` → single recipe
-- `POST /recipes` → create recipe
-```
+- `GET /api/v1/health` → `{ "status": "ok", "app": "KitChain API" }`
+- `POST /api/v1/recipes/scan` → persisted AI scan with `scan_id`, `title`, `ingredients`, `steps`, `notes`, `raw_text`, `confidence`, and `uncertain_lines`
+- `GET /api/v1/recipes/` → list of recipes
+- `GET /api/v1/recipes/{id}` → single recipe
+- `POST /api/v1/recipes/` → create recipe
+- `POST /api/v1/recipes/?source_scan_id={scan_id}` → create with retained source photo; retry the same import without creating another recipe
+- `PATCH /api/v1/scans/{scan_id}/correction` → store the reviewed correction record
+
+The photo screen now uses only the existing local Qwen AI reader; printed/Tesseract scanning and the PaddleOCR fallback are removed. Haptic controls use the already installed `expo-haptics` dependency. See [current review and validation](../docs/UPGRADE_REVIEW.md) and [pixel-art integration](../docs/PIXEL_ART.md).
+
+Photo review fields and the selected image autosave locally for recovery. The recipe list searches names, descriptions and ingredients and supports Newest/Oldest/A–Z sorting. Run `npm ci` after checking out this branch to install its locked AsyncStorage/FileSystem dependencies, then use `npm test` for the draft/search module checks. See [the PR walkthrough](../docs/TRY_PR.md) for the complete checkout/run/merge steps.
 

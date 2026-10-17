@@ -4,7 +4,9 @@ A **TypeScript / Expo / React Native** client paired with a **FastAPI / SQLModel
 
 The engineering evidence includes structured API/data models, image-intake paths, a local-vision integration, error handling in mobile requests, and human review of uncertain extraction results. This is a development prototype.
 
-**Review the evidence:** [recorded validation and setup gaps](docs/VALIDATION.md). Backend syntax and three synthetic text-parser behaviors passed offline checks. Image OCR accuracy, API startup, database integration, and the mobile application were not exercised in that validation.
+**Current work:** [scanner polish and upgrade review](docs/UPGRADE_REVIEW.md), including validation and remaining device checks. The [earlier validation record](docs/VALIDATION.md) is retained as historical evidence.
+
+To try the branch and understand when to merge it, use [the PR #1 walkthrough](docs/TRY_PR.md).
 
 ## Architecture and current status
 
@@ -12,13 +14,17 @@ The engineering evidence includes structured API/data models, image-intake paths
 | --- | --- | --- |
 | Mobile screens | Recipe list/detail, manual creation, photo selection and extraction review | [app/app/(recipes)](app/app/%28recipes%29); implemented in source |
 | API client | API-base configuration, JSON requests, response-status checks | [app/lib/api.ts](app/lib/api.ts); device integration not tested here |
-| Recipe API | CRUD records, photo upload/resize, scan intake | [backend/app/api/v1/recipes.py](backend/app/api/v1/recipes.py); source inspection |
-| Data models | Recipes, users, scan records and handwriting profiles | [backend/app/models](backend/app/models); database integration not tested here |
-| Text parser | Split extracted text into title, ingredients and steps | [ocr_parser.py](backend/app/services/ocr_parser.py); synthetic checks passed |
-| Recognition experiments | Printed Tesseract path, handwritten Ollama path with PaddleOCR fallback | [services](backend/app/services); no accuracy result captured |
+| Recipe API | CRUD, image intake and attaching scan photos | [recipe routes](backend/app/api/v1/recipes.py); synthetic API/SQLite/image tests passed |
+| Data models | Recipes, users, scan records, profiles and scan-to-recipe links | [models](backend/app/models); temporary SQLite integration tested |
+| Historical text helper | Split extracted text into title, ingredients and steps | [ocr_parser.py](backend/app/services/ocr_parser.py); synthetic checks retained, no active OCR engine |
+| Recognition | One local Ollama/Qwen recipe reader; legacy Tesseract and PaddleOCR paths removed | [vision service](backend/app/services/ollama_recipe_vision.py); no accuracy benchmark |
+| UI feedback and art | Shared button haptics and named slots for final pixel art | [art handoff](docs/PIXEL_ART.md); physical-device verification pending |
+| Drafts and search | Local scan-review recovery, durable draft photos, search/sort | [draft store](app/lib/scan-draft-core.ts), [search](app/lib/recipe-search.ts); pure-module tests passed, device persistence pending |
 | API health | `GET /api/v1/health` | [main.py](backend/app/main.py); fixed liveness response |
 
-The client calls the API for recipe records and image intake. The API stores structured records in SQLite and images in local directories. The handwritten path asks the local `qwen2.5vl:3b` model for recipe fields and uncertain words; the UI lets a user review them. Successful Ollama responses currently return `scan_id: null`, so that path does not demonstrate a persisted scan/correction record.
+The client calls the API for recipe records and image intake. The API stores structured records in SQLite and images in local directories. The photo scanner asks the local `qwen2.5vl:3b` model for recipe fields and uncertain words; the UI lets a user review them. Successful AI responses now persist a scan ID, raw output, review hints, and parsed fields before returning. Reviewed corrections are stored separately; they do not automatically train or change the model.
+
+Unfinished photo reviews autosave on the device, scoped to the API server. Native photo drafts use a document-directory copy; the browser uses IndexedDB. Saving a scanned recipe attaches its retained source image, and retries for the same scan reuse the existing recipe. Search covers titles, descriptions and ingredients, with newest/oldest/A–Z sorting.
 
 ## Run the verified offline checks
 
@@ -42,30 +48,42 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-**The current requirements file is incomplete for API startup.** Imported runtime dependencies also include Pillow, `requests`, `python-multipart`, `pytesseract`, and `paddleocr` with a compatible PaddlePaddle runtime. The tested OCR package/version pair is not recorded. Tesseract requires its local executable; optional HEIC support uses `pillow-heif`. Install the compatible local recognition environment before expecting the API to start.
+The requirements now include Pillow, `requests`, and multipart uploads. API startup and CRUD do not require an OCR engine or a running model. Photo scanning requires Ollama on `localhost:11434` with the existing `qwen2.5vl:3b` model installed. Optional HEIC decoding uses `pillow-heif`; without that extra package, export unsupported HEIC photos as JPEG or PNG.
 
-PaddleOCR is currently instantiated during module import. It is therefore a startup dependency even for non-OCR routes; lazy loading is proposed next work.
-
-The API uses synchronous SQLModel sessions, while the settings default uses `sqlite+aiosqlite`. For the synchronous development path, override **`DB_URL`**, which the settings object uses to populate `DATABASE_URL`:
+The default database URL now uses the synchronous SQLite driver expected by the routes. If an existing `.env` overrides **`DB_URL`**, it must also use a synchronous driver:
 
 ```bash
 export DB_URL='sqlite:///./kitchain.db'
 python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-This is a source-derived entry point after resolving the dependency gaps, **not a recorded clean-install success**. Open `http://127.0.0.1:8000/docs` for interactive routes.
+Open `http://127.0.0.1:8000/docs` for interactive routes. API integration tests exercise startup and SQLite using synthetic data; see the current review for the boundary between those checks and actual device/model testing.
 
-In a separate terminal, start the mobile project:
+The mobile project targets **Expo SDK 57**, matching the SDK 57 Expo Go client. Use Node.js 24 LTS (at least 24.3). In a separate terminal, start the mobile project:
 
 ```bash
 cd app
-npm install
+npm ci
 cp .env.example .env
 # Set EXPO_PUBLIC_API_BASE to the API origin reachable by the device
-npx expo start
+npx expo start --clear
 ```
 
-For a physical phone, `127.0.0.1` refers to the phone itself. Use the development machine's reachable LAN address and bind the API to that interface in the trusted lab. Use an API base without a trailing slash for the recipe routes; the health helper has a separate missing-leading-slash issue noted in the validation record. Browser/CORS and device integration are not validated here.
+For a physical phone, `127.0.0.1` refers to the phone itself. Use the development machine's reachable LAN address and bind the API to that interface in the trusted lab. The client now normalizes trailing slashes and uses one API helper, including the health route. Browser/CORS access to a live API still needs separate configuration if a browser client is intended.
+
+## Check the changes
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m unittest discover -s tests -v
+python scripts/validate_local.py
+cd app
+npx tsc --noEmit
+npm run lint
+npm test
+```
+
+The 16 API tests use temporary SQLite/media storage and synthetic images, mocking only the model HTTP response. They check persistence, corrections, errors, photo attachment, save retries and responsiveness. Nineteen frontend tests cover draft serialization/ordering, recipe search, asynchronous photo-copy behavior, and SDK 57 multipart photo uploads with mocked native disk access. Neither suite measures handwriting accuracy or tests physical haptic feel.
 
 ## Operation and limitations
 
@@ -77,8 +95,8 @@ For a physical phone, `127.0.0.1` refers to the phone itself. Use the developmen
 
 Registered recipe/scan routes do not currently enforce user authentication. Security helper files and user models are scaffolding, not proof of access control. Local startup creates tables with `create_all`; migration directories exist, but migration execution was not validated.
 
-The tree currently includes local media under `backend/data`; those files are not a validated test dataset. Database and photo recovery have not been exercised. See the [validation record](docs/VALIDATION.md) for a small future API/device checklist.
+The tree currently includes local media under `backend/data`; those files are not a validated test dataset. Database backup/restore and disaster recovery have not been exercised. See the [current review](docs/UPGRADE_REVIEW.md) for device checks and validation limits.
 
-## Next improvements — not completed
+## Next improvements
 
-Capture a complete pinned runtime/OCR environment, align database configuration with the synchronous session implementation, fix the mobile health URL, defer OCR initialization until requested, and record CRUD/photo/device checks. Auth enforcement, migration/recovery validation, and CI are also pending.
+Integrate Daniel's completed art using [the asset map](docs/PIXEL_ART.md), then perform the [device checklist](docs/UPGRADE_REVIEW.md). Draft recovery, original-photo attachment and recipe search are included in this branch. Auth enforcement, migration/recovery validation, and CI remain separate future work.

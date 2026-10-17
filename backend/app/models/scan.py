@@ -12,7 +12,7 @@ class RecipeScan(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     image_path: Optional[str] = None
-    mode: str = Field(default="printed", index=True)
+    mode: str = Field(default="handwritten", index=True)
     status: str = Field(default="scanned", index=True)
 
     handwriting_profile_id: Optional[int] = Field(default=None, foreign_key="handwritingprofile.id")
@@ -25,3 +25,10 @@ class RecipeScan(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ScanRecipeLink(SQLModel, table=True):
+    """A scan creates one recipe, including when a recovered draft retries a save."""
+
+    scan_id: int = Field(primary_key=True, foreign_key="recipescan.id")
+    recipe_id: int = Field(foreign_key="recipe.id", unique=True, index=True)

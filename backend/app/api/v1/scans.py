@@ -24,10 +24,12 @@ def _upsert_correction(profile: HandwritingProfile, guessed: str, corrected: str
     if not guessed or not corrected or guessed == corrected:
         return
 
-    corrections = list(profile.common_corrections or [])
+    corrections = [dict(item) for item in profile.common_corrections or []]
     for item in corrections:
         if item.get("ocr") == guessed and item.get("corrected") == corrected:
             item["count"] = int(item.get("count", 1)) + 1
+            # Reassign a fresh JSON value so SQLAlchemy persists repeated corrections.
+            profile.common_corrections = [dict(correction) for correction in corrections]
             return
 
     corrections.append({"ocr": guessed, "corrected": corrected, "count": 1})
@@ -66,8 +68,11 @@ def save_scan_correction(scan_id: int, payload: ScanCorrectionIn):
         if not scan:
             raise HTTPException(status_code=404, detail="Scan not found")
 
-        profile_id = payload.handwriting_profile_id or scan.handwriting_profile_id
+        profile_id = (payload.handwriting_profile_id if "handwriting_profile_id" in payload.model_fields_set
+                      else scan.handwriting_profile_id)
         profile = session.get(HandwritingProfile, profile_id) if profile_id else None
+        if profile_id is not None and profile is None:
+            raise HTTPException(status_code=404, detail="Handwriting profile not found")
 
         corrected: Dict[str, Any] = {
             "title": payload.title,
@@ -77,8 +82,7 @@ def save_scan_correction(scan_id: int, payload: ScanCorrectionIn):
         scan.corrected_recipe = corrected
         scan.status = "corrected"
         scan.updated_at = datetime.utcnow()
-        if profile_id:
-            scan.handwriting_profile_id = profile_id
+        scan.handwriting_profile_id = profile_id
 
         if profile:
             parsed = scan.parsed_recipe or {}
