@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, ScrollView, TextInput, Alert, Image, KeyboardAvoidingView, Platform } from "react-native";
-import { HapticPressable as Pressable } from "@/components/HapticPressable";
+import { View, Image, KeyboardAvoidingView, Platform } from "react-native";
+import { kitchen as c, kitchenFonts } from "@/constants/kitchen";
+import { KitchenButton, KitchenHeading, KitchenInput, KitchenNotice, KitchenScroll, KitchenText as Text, PixelFrame, PixelIcon, Flourish, useKitchenDialog } from "@/components/kitchen";
 import { feedback } from "@/lib/haptics";
 import { photoForm } from "@/lib/photos";
 import { useLocalSearchParams, router } from "expo-router";
@@ -27,6 +28,7 @@ export default function RecipeDetail() {
 }
 
 function RecipeDetailContent({ id }: { id: string }) {
+  const Alert = useKitchenDialog();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -170,196 +172,55 @@ function RecipeDetailContent({ id }: { id: string }) {
     setIsEditing(false);
   }
 
-  if (loading) {
-    return (
-      <View style={{ flex: 1, padding: 16, justifyContent: "center" }}>
-        <Text style={{ fontSize: 18, fontWeight: "600" }}>Loading recipe…</Text>
-        <Text style={{ color: "#666", marginTop: 6 }}>Opening the recipe card.</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={{ flex: 1, padding: 16, justifyContent: "center", gap: 12 }}>
-        <View style={{ backgroundColor: "#fef2f2", padding: 12, borderRadius: 10 }}>
-          <Text style={{ color: "#991b1b", fontWeight: "600" }}>Recipe error</Text>
-          <Text style={{ color: "#7f1d1d", marginTop: 4 }}>{error}</Text>
-        </View>
-
-        <Pressable
-          onPress={() => {
-            setLoading(true);
-            setError("");
-            void loadRecipe();
-          }}
-          style={{ backgroundColor: "#1e73ff", padding: 14, borderRadius: 10 }}
-        >
-          <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>Try Again</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => router.back()}
-          style={{ backgroundColor: "#eee", padding: 14, borderRadius: 10 }}
-        >
-          <Text style={{ textAlign: "center", fontWeight: "600" }}>Back</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  if (!recipe) {
-    return (
-      <View style={{ flex: 1, padding: 16, justifyContent: "center" }}>
-        <Text>Recipe not found.</Text>
-      </View>
-    );
-  }
-
-  if (isEditing) {
-    return (
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={80}
-      >
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 240 }}
-        >
-          <Text style={{ fontSize: 24, fontWeight: "700" }}>Edit Recipe</Text>
-
-        {photoUri ? (
-          <Image source={{ uri: photoUri }} style={{ width: "100%", height: 220, borderRadius: 12 }} />
-        ) : null}
-
-        <Pressable
-          onPress={pickAndUploadPhoto}
-          disabled={busy}
-          style={{ backgroundColor: "#eee", padding: 14, borderRadius: 10 }}
-        >
-          <Text style={{ textAlign: "center", fontWeight: "600" }}>
-            {photoUri ? "Replace Recipe Photo" : "Add Recipe Photo"}
-          </Text>
-        </Pressable>
-
-        <Text style={{ fontWeight: "600" }}>Title</Text>
-        <TextInput
-          editable={!busy}
-          value={title}
-          onChangeText={setTitle}
-          style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10 }}
-        />
-
-        <Text style={{ fontWeight: "600" }}>Description</Text>
-        <TextInput
-          editable={!busy}
-          value={description}
-          onChangeText={setDescription}
-          multiline
-          style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, minHeight: 70 }}
-        />
-
-        <Text style={{ fontWeight: "600" }}>Ingredients</Text>
-        <TextInput
-          editable={!busy}
-          value={ingredientsText}
-          onChangeText={setIngredientsText}
-          multiline
-          style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, minHeight: 130 }}
-        />
-
-        <Text style={{ fontWeight: "600" }}>Steps / Notes</Text>
-        <TextInput
-          editable={!busy}
-          value={stepsText}
-          onChangeText={setStepsText}
-          multiline
-          style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, minHeight: 160 }}
-        />
-
-        <Pressable
-          onPress={saveEdits}
-          disabled={busy}
-          style={{ backgroundColor: "#16a34a", padding: 14, borderRadius: 10 }}
-        >
-          <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>{busy ? "Working…" : "Save Changes"}</Text>
-        </Pressable>
-
-        <Pressable
-          disabled={busy}
-          onPress={cancelEdits}
-          style={{ backgroundColor: "#eee", padding: 14, borderRadius: 10 }}
-        >
-          <Text style={{ textAlign: "center", fontWeight: "600" }}>Cancel</Text>
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    );
-  }
+  if (loading) return <KitchenScroll contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}><KitchenNotice title="Opening the recipe card…">Your recipe will be ready in a moment.</KitchenNotice></KitchenScroll>;
+  if (error) return <KitchenScroll contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}>
+    <KitchenNotice kind="error" title="Could not open this recipe">{error}</KitchenNotice>
+    <KitchenButton variant="primary" onPress={() => { setLoading(true); setError(""); void loadRecipe(); }}>Try again</KitchenButton>
+    <KitchenButton icon="back" onPress={() => router.back()}>Back</KitchenButton>
+  </KitchenScroll>;
+  if (!recipe) return <KitchenScroll><KitchenNotice>Recipe not found.</KitchenNotice></KitchenScroll>;
+  if (isEditing) return <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.ivory }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={80}>
+    <KitchenScroll contentContainerStyle={{ paddingBottom: 80 }}>
+      <KitchenHeading>Make it your own</KitchenHeading>
+      <PixelFrame ornate contentStyle={{ padding: 24, gap: 16 }}>
+        {photoUri ? <Image source={{ uri: photoUri }} accessibilityLabel="Recipe photo" resizeMode="contain" style={{ width: "100%", height: 220, backgroundColor: c.ivory }} /> : null}
+        <KitchenButton onPress={pickAndUploadPhoto} disabled={busy} icon="plus">{photoUri ? "Replace recipe photo" : "Add recipe photo"}</KitchenButton>
+        <KitchenInput label="Title" editable={!busy} value={title} onChangeText={setTitle} />
+        <KitchenInput label="Description" editable={!busy} value={description} onChangeText={setDescription} multiline />
+        <KitchenInput label="Ingredients · one per line" editable={!busy} value={ingredientsText} onChangeText={setIngredientsText} multiline style={{ minHeight: 130 }} />
+        <KitchenInput label="Directions / notes" editable={!busy} value={stepsText} onChangeText={setStepsText} multiline style={{ minHeight: 160 }} />
+        <KitchenButton onPress={saveEdits} disabled={busy} variant="primary" icon="save">{busy ? "Working…" : "Save changes"}</KitchenButton>
+        <KitchenButton disabled={busy} onPress={cancelEdits}>Cancel</KitchenButton>
+      </PixelFrame>
+    </KitchenScroll>
+  </KeyboardAvoidingView>;
 
   const ingredients = textToList(listToText(recipe.ingredients));
   const allSteps = textToList(listToText(recipe.steps));
-
-  const steps = allSteps.filter((step) => !step.toLowerCase().startsWith("note:"));
-  const notes = allSteps
-    .filter((step) => step.toLowerCase().startsWith("note:"))
-    .map((note) => note.replace(/^note:\s*/i, ""));
-
-  return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text style={{ fontSize: 24, fontWeight: "700" }}>{recipe.title}</Text>
-      {recipe.description ? <Text style={{ color: "#444" }}>{recipe.description}</Text> : null}
-
-      {photoUri ? (
-        <Image source={{ uri: photoUri }} style={{ width: "100%", height: 240, borderRadius: 12 }} />
-      ) : null}
-
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <Pressable
-          onPress={() => setIsEditing(true)}
-          disabled={busy}
-          style={{ backgroundColor: "#1e73ff", padding: 12, borderRadius: 10, flex: 1 }}
-        >
-          <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>Edit</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={deleteRecipe}
-          disabled={busy}
-          haptic="warning"
-          style={{ backgroundColor: "#dc2626", padding: 12, borderRadius: 10, flex: 1 }}
-        >
-          <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>Delete</Text>
-        </Pressable>
-      </View>
-
-      {ingredients.length > 0 ? (
-        <View>
-          <Text style={{ fontWeight: "600", marginTop: 8 }}>Ingredients</Text>
-          {ingredients.map((it, i) => (
-            <Text key={i}>• {it}</Text>
-          ))}
-        </View>
-      ) : null}
-
-      {steps.length > 0 ? (
-        <View>
-          <Text style={{ fontWeight: "600", marginTop: 8 }}>Steps</Text>
-          {steps.map((step, i) => (
-            <Text key={i}>{i + 1}. {step}</Text>
-          ))}
-        </View>
-      ) : null}
-
-      {notes.length > 0 ? (
-        <View>
-          <Text style={{ fontWeight: "600", marginTop: 8 }}>Notes / Optional Add-ins</Text>
-          {notes.map((note, i) => (
-            <Text key={i}>• {note}</Text>
-          ))}
-        </View>
-      ) : null}
-    </ScrollView>
-  );
+  const steps = allSteps.filter(step => !step.toLowerCase().startsWith("note:"));
+  const notes = allSteps.filter(step => step.toLowerCase().startsWith("note:")).map(note => note.replace(/^note:\s*/i, ""));
+  return <KitchenScroll>
+    <PixelFrame ornate contentStyle={{ padding: 26, gap: 18 }}>
+      <View style={{ alignItems: "center" }}><PixelIcon name="herb" color={c.greenShade} size={28} /></View>
+      <Text accessibilityRole="header" style={{ fontFamily: kitchenFonts.heading, fontSize: 30, lineHeight: 38, fontWeight: "700", textAlign: "center" }}>{recipe.title}</Text>
+      {!!recipe.description && <Text style={{ color: c.muted, textAlign: "center" }}>{recipe.description}</Text>}
+      <Flourish />
+      {photoUri ? <View style={{ borderColor: c.border, borderWidth: 1, padding: 5, backgroundColor: c.ivory }}><Image source={{ uri: photoUri }} accessibilityLabel={`Photo of ${recipe.title}`} resizeMode="contain" style={{ width: "100%", height: 240 }} /></View> : null}
+      {ingredients.length > 0 && <View style={{ gap: 10 }}>
+        <Text accessibilityRole="header" style={{ fontFamily: kitchenFonts.heading, fontSize: 22, lineHeight: 30, fontWeight: "700" }}>Ingredients</Text>
+        {ingredients.map((ingredient, index) => <View key={index} style={{ flexDirection: "row", gap: 10 }}><Text style={{ color: c.greenInk }}>▪</Text><Text style={{ flex: 1 }}>{ingredient}</Text></View>)}
+      </View>}
+      {steps.length > 0 && <View style={{ gap: 14 }}>
+        <Flourish />
+        <Text accessibilityRole="header" style={{ fontFamily: kitchenFonts.heading, fontSize: 22, lineHeight: 30, fontWeight: "700" }}>Directions</Text>
+        {steps.map((step, index) => <View key={index} style={{ flexDirection: "row", gap: 12 }}><Text style={{ color: c.greenInk, fontWeight: "700", minWidth: 22 }}>{index + 1}.</Text><Text style={{ flex: 1 }}>{step}</Text></View>)}
+      </View>}
+      {notes.length > 0 && <KitchenNotice title="Notes / optional add-ins">{notes.map((note, index) => <Text key={index}>{note}</Text>)}</KitchenNotice>}
+      <Flourish />
+    </PixelFrame>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+      <KitchenButton onPress={() => setIsEditing(true)} disabled={busy} variant="butter" icon="edit" style={{ flexGrow: 1 }}>Edit recipe</KitchenButton>
+      <KitchenButton onPress={deleteRecipe} disabled={busy} variant="danger" haptic="warning" icon="delete" style={{ flexGrow: 1 }}>Delete</KitchenButton>
+    </View>
+  </KitchenScroll>;
 }

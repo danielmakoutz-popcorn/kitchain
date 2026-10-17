@@ -1,11 +1,11 @@
 import { useRef, useState } from "react";
-import { Text, TextInput, Alert, ScrollView } from "react-native";
-import { HapticPressable as Pressable } from "@/components/HapticPressable";
+import { KitchenButton, KitchenHeading, KitchenInput, KitchenScroll, PixelFrame, useKitchenDialog } from "@/components/kitchen";
 import { feedback } from "@/lib/haptics";
 import { api } from "../../lib/api";
 import { useRouter } from "expo-router";
 
 export default function AddRecipe() {
+  const Alert = useKitchenDialog();
   const [title, setTitle] = useState("");
   const [description, setDesc] = useState("");
   const [ingredients, setIngredients] = useState("");
@@ -56,22 +56,14 @@ export default function AddRecipe() {
     }
   }
 
-  return (
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding:16, gap:12 }}>
-      <Text style={{ fontSize:20, fontWeight:"600" }}>Add Recipe</Text>
-      <TextInput editable={!saving} placeholder="Title" value={title} onChangeText={setTitle}
-        style={{ borderWidth:1, borderColor:"#ddd", borderRadius:8, padding:10 }} />
-      <TextInput editable={!saving} placeholder="Short description" value={description} onChangeText={setDesc}
-        style={{ borderWidth:1, borderColor:"#ddd", borderRadius:8, padding:10 }} />
-      <Text style={{ fontWeight:"600" }}>Ingredients (one per line)</Text>
-      <TextInput editable={!saving} multiline value={ingredients} onChangeText={setIngredients}
-        style={{ minHeight:100, borderWidth:1, borderColor:"#ddd", borderRadius:8, padding:10 }} />
-      <Text style={{ fontWeight:"600" }}>Steps (one per line)</Text>
-      <TextInput editable={!saving} multiline value={steps} onChangeText={setSteps}
-        style={{ minHeight:100, borderWidth:1, borderColor:"#ddd", borderRadius:8, padding:10 }} />
-      <Pressable onPress={submit} disabled={saving} style={{ backgroundColor:"#1e73ff", padding:14, borderRadius:10 }}>
-        <Text style={{ color:"#fff", textAlign:"center", fontWeight:"600" }}>{saving ? "Saving…" : "Save"}</Text>
-      </Pressable>
-    </ScrollView>
-  );
+  return <KitchenScroll>
+    <KitchenHeading subtitle="Write it down. Keep it close.">A new recipe</KitchenHeading>
+    <PixelFrame ornate contentStyle={{ padding: 24, gap: 16 }}>
+      <KitchenInput label="Recipe title" editable={!saving} placeholder="What are we making?" value={title} onChangeText={setTitle} />
+      <KitchenInput label="A little about it" editable={!saving} placeholder="A family favorite, a new discovery…" value={description} onChangeText={setDesc} />
+      <KitchenInput label="Ingredients · one per line" editable={!saving} multiline value={ingredients} onChangeText={setIngredients} placeholder="2 cups flour" />
+      <KitchenInput label="Directions · one step per line" editable={!saving} multiline value={steps} onChangeText={setSteps} placeholder="Start with…" style={{ minHeight: 150 }} />
+      <KitchenButton onPress={submit} disabled={saving} variant="primary" icon="save">{saving ? "Saving…" : "Save recipe"}</KitchenButton>
+    </PixelFrame>
+  </KitchenScroll>;
 }

@@ -4,6 +4,8 @@ A **TypeScript / Expo / React Native** client paired with a **FastAPI / SQLModel
 
 The engineering evidence includes structured API/data models, image-intake paths, a local-vision integration, error handling in mobile requests, and human review of uncertain extraction results. This is a development prototype.
 
+**Visual pass:** [warm-kitchen design](docs/KITCHEN_DESIGN.md), with live parchment frames, themed controls/dialogs and open slots for Daniel’s artwork.
+
 **Current work:** [scanner polish and upgrade review](docs/UPGRADE_REVIEW.md), including validation and remaining device checks. The [earlier validation record](docs/VALIDATION.md) is retained as historical evidence.
 
 To try the branch and understand when to merge it, use [the PR #1 walkthrough](docs/TRY_PR.md).

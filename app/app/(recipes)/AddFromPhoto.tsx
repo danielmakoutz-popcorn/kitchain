@@ -1,8 +1,9 @@
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, View } from "react-native";
 import { router } from "expo-router";
-import { HapticPressable } from "@/components/HapticPressable";
+import { kitchen as c } from "@/constants/kitchen";
+import { KitchenButton, KitchenHeading, KitchenInput, KitchenNotice, KitchenScroll, KitchenText as Text, PixelFrame, PixelIcon, ReadingRecipe, ScannerFrame, useKitchenDialog } from "@/components/kitchen";
 import { ArtSlot } from "@/components/ArtSlot";
 import { requestJson } from "@/lib/api";
 import { feedback } from "@/lib/haptics";
@@ -12,10 +13,9 @@ import { keepDraftPhoto } from "@/lib/draft-platform";
 import { useScanDraft } from "@/hooks/use-scan-draft";
 
 type HandwritingProfile = { id: number; name: string };
-const fieldStyle = { borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10 };
-const buttonStyle = { backgroundColor: "#eee", padding: 12, borderRadius: 10 };
 
 export default function AddFromPhoto() {
+  const Alert = useKitchenDialog();
   const { draft, ready, recovered, storageError, savingDraft, recoveryDisabled, continueWithoutRecovery, update, clear, reload } = useScanDraft();
   const { photo, result, title, ingredientsText, stepsText, notesText, selectedProfileId, newProfileName } = draft;
   const setTitle = (value: string) => { void update({ title: value }); };
@@ -207,92 +207,60 @@ export default function AddFromPhoto() {
     ]);
   }
 
-  return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={80}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 80 }}>
-        <Text style={{ fontSize: 20, fontWeight: "600" }}>Add from Photo</Text>
-        {!ready && !storageError && <ActivityIndicator accessibilityLabel="Opening saved draft" />}
-        {recovered && <Text accessibilityLiveRegion="polite" style={{ color: "#166534" }}>Recovered your unfinished recipe from this device.</Text>}
-        {!!storageError && <View style={{ gap: 8, backgroundColor: "#fff7ed", padding: 12, borderRadius: 10 }}>
-          <Text accessibilityLiveRegion="polite">{storageError}</Text>
-          <HapticPressable disabled={scanning || saving || discarding} onPress={() => ready ? void update({}) : void reload()} style={buttonStyle}>
-            <Text>Retry draft storage</Text>
-          </HapticPressable>
-          {!ready && <HapticPressable disabled={discarding} onPress={continueWithoutRecovery} style={buttonStyle}><Text>Continue without recovery</Text></HapticPressable>}
-        </View>}
-        {recoveryDisabled && <Text style={{ color: "#92400e" }}>Draft recovery is off for this screen. Keep it open until you save the recipe.</Text>}
-        {draft.savedRecipeId !== null && <View style={{ gap: 8 }}>
-          <Text>This recipe was already saved. You can open it or discard the leftover draft.</Text>
-          <HapticPressable onPress={() => router.replace(`/(recipes)/${draft.savedRecipeId}`)} style={buttonStyle}><Text>Open saved recipe</Text></HapticPressable>
-        </View>}
-        {(photo || storageError) && <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-          {photo && !recoveryDisabled && <Text>{savingDraft ? "Saving draft…" : storageError ? "Draft save needs attention" : "Draft saved on this device"}</Text>}
-          <HapticPressable haptic="warning" disabled={scanning || saving || creatingProfile || pickingPhoto || discarding} onPress={discardDraft} style={buttonStyle}><Text>Discard draft</Text></HapticPressable>
-        </View>}
-        <Text>Choose a clear recipe photo. The local AI will read it, then you can review and edit before saving.</Text>
-        {photo && <Image source={{ uri: photo.uri }} resizeMode="contain" style={{ width: "100%", height: 240, borderRadius: 10 }} accessibilityLabel="Selected recipe photo" />}
-        <Text style={{ fontWeight: "600" }}>Who wrote this? (optional)</Text>
-        {profileError ? <View style={{ gap: 8 }}>
-          <Text>{profileError}</Text>
-          <HapticPressable disabled={busy} onPress={loadProfiles} style={buttonStyle}><Text>Retry profiles</Text></HapticPressable>
-        </View> : null}
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {[{ id: null, name: "Unknown" }, ...profiles].map((profile) => (
-            <HapticPressable key={String(profile.id)} haptic="selection" disabled={busy}
-              accessibilityRole="radio" accessibilityState={{ selected: selectedProfileId === profile.id }}
-              onPress={() => setSelectedProfileId(profile.id)}
-              style={{ ...buttonStyle, backgroundColor: selectedProfileId === profile.id ? "#1e73ff" : "#eee" }}>
-              <Text style={{ color: selectedProfileId === profile.id ? "#fff" : "#111" }}>{profile.name}</Text>
-            </HapticPressable>
-          ))}
+  return <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.ivory }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={80}>
+    <KitchenScroll contentContainerStyle={{ paddingBottom: 80 }}>
+      <KitchenHeading subtitle="Turn a recipe card into a recipe you can keep.">Add from photo</KitchenHeading>
+      {!ready && !storageError && <ActivityIndicator color={c.greenInk} accessibilityLabel="Opening saved draft" />}
+      {recovered && <KitchenNotice kind="success">Recovered your unfinished recipe from this device.</KitchenNotice>}
+      {!!storageError && <KitchenNotice kind="error" title="Draft storage needs attention">
+        <Text>{storageError}</Text>
+        <KitchenButton compact disabled={scanning || saving || discarding} onPress={() => ready ? void update({}) : void reload()}>Retry draft storage</KitchenButton>
+        {!ready && <KitchenButton compact disabled={discarding} onPress={continueWithoutRecovery}>Continue without recovery</KitchenButton>}
+      </KitchenNotice>}
+      {recoveryDisabled && <Text style={{ color: c.redInk }}>Draft recovery is off for this screen. Keep it open until you save the recipe.</Text>}
+      {draft.savedRecipeId !== null && <KitchenNotice title="This recipe is already saved">
+        <Text>You can open it or discard the leftover draft.</Text>
+        <KitchenButton onPress={() => router.replace(`/(recipes)/${draft.savedRecipeId}`)}>Open saved recipe</KitchenButton>
+      </KitchenNotice>}
+      {(photo || storageError) && <View style={{ gap: 10 }}>
+        {photo && !recoveryDisabled && <Text accessibilityLiveRegion="polite" style={{ color: c.muted, fontSize: 14 }}>{savingDraft ? "Saving draft…" : storageError ? "Draft save needs attention" : "Draft saved on this device"}</Text>}
+        <KitchenButton compact haptic="warning" disabled={scanning || saving || creatingProfile || pickingPhoto || discarding} onPress={discardDraft}>Discard draft</KitchenButton>
+      </View>}
+      <Text>Choose a clear recipe photo. The local AI will read it, then you can review and edit before saving.</Text>
+      {photo ? <ScannerFrame reading={scanning}><Image source={{ uri: photo.uri }} resizeMode="contain" style={{ width: "100%", height: 260 }} accessibilityLabel="Selected recipe photo" /></ScannerFrame> : <ScannerFrame><View style={{ minHeight: 160, justifyContent: "center", alignItems: "center", gap: 12 }}><ArtSlot name="scanButton" fallback={<PixelIcon name="scan" size={42} color={c.greenShade} />} /><Text style={{ color: c.muted }}>Your recipe photo goes here</Text></View></ScannerFrame>}
+      <PixelFrame contentStyle={{ padding: 18, gap: 12 }}>
+        <Text style={{ fontWeight: "700" }}>Who wrote this? · optional</Text>
+        {profileError ? <View style={{ gap: 10 }}><Text>{profileError}</Text><KitchenButton compact disabled={busy} onPress={loadProfiles}>Retry profiles</KitchenButton></View> : null}
+        <View accessibilityRole="radiogroup" style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {[{ id: null, name: "Unknown" }, ...profiles].map(profile => <KitchenButton compact key={String(profile.id)} haptic="selection" disabled={busy} variant={selectedProfileId === profile.id ? "primary" : "neutral"} accessibilityRole="radio" accessibilityState={{ selected: selectedProfileId === profile.id }} onPress={() => setSelectedProfileId(profile.id)}>{profile.name}</KitchenButton>)}
         </View>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <TextInput value={newProfileName} onChangeText={setNewProfileName} editable={!busy}
-            placeholder="Add person, e.g. Grandma Carol" accessibilityLabel="New writer name" style={{ ...fieldStyle, flex: 1 }} />
-          <HapticPressable disabled={busy || !newProfileName.trim()} onPress={createProfile} style={buttonStyle}>
-            <Text>{creatingProfile ? "Adding…" : "Add"}</Text>
-          </HapticPressable>
-        </View>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-          <HapticPressable onPress={pickImage} disabled={busy} style={buttonStyle}><Text>{photo ? "Replace photo" : "Pick photo"}</Text></HapticPressable>
-          <HapticPressable onPress={requestScan} disabled={!photo || busy}
-            style={{ ...buttonStyle, backgroundColor: "#1e73ff", flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <ArtSlot name="scanButton" scale={1} />
-            <Text style={{ color: "#fff" }}>{scanning ? "Scanning…" : result ? "Scan again" : "Scan with AI"}</Text>
-          </HapticPressable>
-        </View>
-        {scanning && <View accessibilityLiveRegion="polite" style={{ backgroundColor: "#eff6ff", padding: 12, borderRadius: 10, gap: 8 }}>
-          <ArtSlot name="scanWorking" fallback={<ActivityIndicator accessibilityLabel="Reading recipe" />} />
-          <Text style={{ fontWeight: "600" }}>Reading recipe card…</Text>
-          <Text>The local AI can take a few minutes. Your photo will stay here while you wait.</Text>
-          <HapticPressable haptic="selection" onPress={cancelScan} style={buttonStyle}><Text>Stop waiting</Text></HapticPressable>
-        </View>}
-        {!!scanError && <View accessibilityLiveRegion="polite" style={{ backgroundColor: "#fef2f2", padding: 12, borderRadius: 10, gap: 8 }}>
-          <ArtSlot name="scanError" /><Text style={{ color: "#991b1b" }}>{scanError}</Text>
-        </View>}
-        {result && <>
-          <ArtSlot name="scanReady" />
-          <Text style={{ fontSize: 18, fontWeight: "600" }}>Review your recipe</Text>
-          <Text>Check names, amounts, and cooking times against your photo before saving.</Text>
-          <Text>Review hint: {result.confidence}. This is not an accuracy score.</Text>
-          {result.uncertain_lines.length > 0 && <Text style={{ color: "#92400e" }}>Needs review: {result.uncertain_lines.join("; ")}</Text>}
-          <Text style={{ fontWeight: "600" }}>Title</Text>
-          <TextInput accessibilityLabel="Recipe title" value={title} onChangeText={setTitle} editable={!busy} style={fieldStyle} />
-          <Text style={{ fontWeight: "600" }}>Ingredients (one per line)</Text>
-          <TextInput accessibilityLabel="Recipe ingredients" value={ingredientsText} onChangeText={setIngredientsText} editable={!busy} multiline style={{ ...fieldStyle, minHeight: 120, textAlignVertical: "top" }} />
-          <Text style={{ fontWeight: "600" }}>Steps (one per line)</Text>
-          <TextInput accessibilityLabel="Recipe steps" value={stepsText} onChangeText={setStepsText} editable={!busy} multiline style={{ ...fieldStyle, minHeight: 140, textAlignVertical: "top" }} />
-          <Text style={{ fontWeight: "600" }}>Notes / Optional Add-ins</Text>
-          <TextInput accessibilityLabel="Recipe notes" value={notesText} onChangeText={setNotesText} editable={!busy} multiline style={{ ...fieldStyle, minHeight: 100, textAlignVertical: "top" }} />
-          <HapticPressable haptic="selection" onPress={() => setShowRaw(!showRaw)} style={buttonStyle} accessibilityState={{ expanded: showRaw }}>
-            <Text>{showRaw ? "Hide" : "Show"} original AI response</Text>
-          </HapticPressable>
-          {showRaw && <Text selectable style={fieldStyle}>{result.raw_text || "No raw response provided."}</Text>}
-          <HapticPressable onPress={saveAsRecipe} disabled={busy || !title.trim()} style={{ ...buttonStyle, backgroundColor: "#16a34a", marginTop: 12 }}>
-            <Text style={{ color: "#fff", textAlign: "center", fontWeight: "600" }}>{saving ? "Saving…" : "Save Recipe"}</Text>
-          </HapticPressable>
-        </>}
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
+        <KitchenInput value={newProfileName} onChangeText={setNewProfileName} editable={!busy} placeholder="Add a writer, e.g. Grandma Carol" accessibilityLabel="New writer name" />
+        <KitchenButton compact disabled={busy || !newProfileName.trim()} onPress={createProfile} icon="plus">{creatingProfile ? "Adding…" : "Add writer"}</KitchenButton>
+      </PixelFrame>
+      <KitchenButton onPress={pickImage} disabled={busy} icon="plus">{photo ? "Replace photo" : "Choose a photo"}</KitchenButton>
+      <KitchenButton onPress={requestScan} disabled={!photo || busy} variant="primary">
+        <ArtSlot name="scanButton" scale={1} fallback={<PixelIcon name="scan" />} />
+        <Text style={{ fontWeight: "700", flexShrink: 1 }}>{scanning ? "Scanning…" : result ? "Scan again" : "Scan with AI"}</Text>
+      </KitchenButton>
+      {scanning && <KitchenNotice>
+        <ReadingRecipe />
+        <Text>The local AI can take a few minutes. Your photo will stay here while you wait.</Text>
+        <KitchenButton haptic="selection" onPress={cancelScan}>Stop waiting</KitchenButton>
+      </KitchenNotice>}
+      {!!scanError && <KitchenNotice kind="error" title="This scan needs attention"><ArtSlot name="scanError" /><Text style={{ color: c.redInk }}>{scanError}</Text></KitchenNotice>}
+      {result && <PixelFrame ornate contentStyle={{ padding: 24, gap: 16 }}>
+        <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}><ArtSlot name="scanReady" fallback={<PixelIcon name="check" color={c.greenInk} />} /><Text accessibilityRole="header" style={{ fontWeight: "700", fontSize: 20 }}>Review your recipe</Text></View>
+        <Text>Check names, amounts, and cooking times against your photo before saving.</Text>
+        <Text style={{ color: c.muted, fontSize: 14 }}>Review hint: {result.confidence}. This is not an accuracy score.</Text>
+        {result.uncertain_lines.length > 0 && <KitchenNotice title="Take another look">{result.uncertain_lines.join("; ")}</KitchenNotice>}
+        <KitchenInput label="Title" accessibilityLabel="Recipe title" value={title} onChangeText={setTitle} editable={!busy} />
+        <KitchenInput label="Ingredients · one per line" accessibilityLabel="Recipe ingredients" value={ingredientsText} onChangeText={setIngredientsText} editable={!busy} multiline />
+        <KitchenInput label="Directions · one step per line" accessibilityLabel="Recipe steps" value={stepsText} onChangeText={setStepsText} editable={!busy} multiline style={{ minHeight: 140 }} />
+        <KitchenInput label="Notes / optional add-ins" accessibilityLabel="Recipe notes" value={notesText} onChangeText={setNotesText} editable={!busy} multiline />
+        <KitchenButton compact haptic="selection" onPress={() => setShowRaw(!showRaw)} accessibilityState={{ expanded: showRaw }}>{showRaw ? "Hide original AI response" : "Show original AI response"}</KitchenButton>
+        {showRaw && <Text selectable style={{ color: c.muted }}>{result.raw_text || "No raw response provided."}</Text>}
+        <KitchenButton onPress={saveAsRecipe} disabled={busy || !title.trim()} variant="primary" icon="save">{saving ? "Saving…" : "Save recipe"}</KitchenButton>
+      </PixelFrame>}
+    </KitchenScroll>
+  </KeyboardAvoidingView>;
 }

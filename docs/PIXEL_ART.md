@@ -1,18 +1,23 @@
 # KitChain pixel-art handoff
 
-Daniel's finished art belongs in `app/assets/pixel/`. This pass leaves that art to Daniel and supplies the integration points; all entries are currently null and the existing UI remains usable.
+The approved warm-kitchen interface is implemented in `app/components/kitchen/`, with the palette in `app/constants/kitchen.ts`. Its scalable pixel frames, parchment grain, buttons, inputs, search, scanner brackets, sparkles, and confirmation panels are code-native SVG/React Native pieces. Text stays live and accessible rather than being baked into pictures.
+
+Daniel's finished food sprites and onion-cutting animation belong in `app/assets/pixel/`. All entries in `app/constants/art.ts` remain null until his actual files arrive. The interface uses decorative fallbacks in those spaces and does not generate replacement food sprites.
 
 ## Asset map
 
 | Registry key | Where it appears | Current fallback |
 | --- | --- | --- |
-| `scanButton` | Beside Scan with AI / Scan again | Button text |
-| `scanWorking` | While the local AI reads | Native activity indicator and status text |
-| `scanReady` | Above the editable review | Review heading and fields |
-| `scanError` | Beside a scan failure/retry message | Error text |
-| `recipePlaceholder` | A recipe card without a photo | No Image label |
+| `homeHero` | Above the home wordmark | Small herb sprig |
+| `scanButton` | Beside Scan with AI / in the empty photo frame | Scanner symbol |
+| `scanWorking` | While the local AI reads | Spinner in a 96×64 space; ready for the onion animation |
+| `scanReady` | Above the editable review | Success check |
+| `scanError` | Beside a scan failure/retry message | Error text remains visible |
+| `recipePlaceholder` | A recipe card without a photo | Recipe-book symbol |
+| `collectionEmpty` | An empty recipe collection | Recipe-book symbol |
+| `saveSuccess` | Saved-recipe popup | Check and sparkles |
 
-Add literal Metro `require(...)` sources in `app/constants/art.ts`. For example, once the file exists:
+Add literal Metro `require(...)` sources in `app/constants/art.ts` after the file exists:
 
 ```tsx
 scanButton: {
@@ -22,16 +27,42 @@ scanButton: {
 },
 ```
 
-The shared `ArtSlot` component selects the named asset, preserves its aspect ratio, uses integer layout multiples, and disables image crossfades. The scan-button slot uses 1× layout; other slots default to 2×. Asset width/height specify the intended base layout size. Labels and touch handling remain outside the artwork, so changing art does not change scanning or button behavior.
+## Animation handoff
 
-## Export conventions
+Export same-canvas transparent frames with a stable anchor. A frame sequence can use:
 
-- Start from the existing 32×32 working canvas and cohesive small palette where appropriate; rectangular cards can use their own dimensions.
-- Use transparent PNG for static UI art. Give files meaningful lowercase names such as `scan-button.png` and `recipe-placeholder.png`.
-- Prepare nearest-neighbor exports for the actual display sizes/device densities. Integer layout alone does not guarantee native image sampling will keep source pixels sharp; verify after the files arrive.
-- Keep a consistent anchor and canvas across an animation. Full sprite-sheet playback, frame timing, button bounce, and success sparkles belong to the final artwork pass; they are not implemented by these empty slots.
-- Keep visible action/error labels. Artwork is decorative and should not be the only indication of status.
+```tsx
+scanWorking: {
+  source: require("../assets/pixel/onion-01.png"), // still poster for reduced motion
+  frames: [
+    require("../assets/pixel/onion-01.png"),
+    require("../assets/pixel/onion-02.png"),
+    require("../assets/pixel/onion-03.png"),
+  ],
+  frameDurationMs: 120,
+  width: 32,
+  height: 32,
+},
+```
 
-App launcher/splash artwork uses the existing paths in `app/app.json`. `app/app.config.js` now extends that configuration instead of replacing it. Change those assets separately when the final exports are ready.
+Timing is configurable (minimum 40 ms). Playback stops when the slot unmounts or the system requests reduced motion; reduced motion uses `source`. The scan-working slot is mounted only while scanning. A sprite sheet will need its frame geometry mapped when that actual export arrives; no sheet dimensions or timing are guessed here.
 
-Before release, inspect real artwork on the target phones for crispness, clipping, palette consistency, animation/reduced-motion behavior, and contrast. This setup does not invent replacement sprites or final animation timing.
+## Palette and exports
+
+| Anchor | Hex |
+| --- | --- |
+| Warm ivory | `#FFF7E6` |
+| Parchment | `#EFD5A3` |
+| Terracotta | `#E1845F` |
+| Garden herb | `#9CBB78` |
+| Espresso | `#543A31` |
+| Golden butter | `#F7D66D` |
+| Ripe tomato | `#E56F56` |
+
+- Continue using the 32×32 working canvas and this small palette where appropriate. Rectangular assets can have their own dimensions.
+- Use transparent PNG for static assets and frame exports, with meaningful lowercase filenames.
+- `ArtSlot` preserves aspect ratio, uses integer layout multiples and disables image crossfades. The scan-button slot is 1×; other slots default to 2×. Base width/height specify layout size.
+- Nearest-neighbor source exports should be prepared for intended display sizes/device densities. Integer layout alone does not guarantee the native renderer will keep every source pixel sharp; check actual exports on the phone.
+- Actions, errors, progress labels and touch handling remain outside the art. No artwork is required to understand or operate the controls.
+
+Launcher and splash art are separate existing assets in `app/app.json`; they will be replaced only when final exports are provided. See [the design review](KITCHEN_DESIGN.md) for implementation and device checks.
