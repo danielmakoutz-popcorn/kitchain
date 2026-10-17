@@ -19,6 +19,18 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "change-me"
     JWT_ALG: str = "HS256"
 
+    # Discovery runs locally. Keys never belong in EXPO_PUBLIC_* variables.
+    TAVILY_API_KEY: str = ""
+    SEARCH_MONTHLY_CREDITS: int = 1000
+    SEARCH_DAILY_PER_MEMBER: int = 20
+    SEARCH_MAX_PAGES: int = 3
+    TEXT_AI_URL: str = "http://127.0.0.1:11434"
+    TEXT_AI_MODEL: str = "qwen3:4b"
+    TEXT_AI_ENABLED: bool = True
+    TEXT_AI_TIMEOUT: int = 45
+    # Operator-confirmed permissions; not an automatic scraping allowlist.
+    RECIPE_REUSE_DOMAINS: str = ""
+
     # --- Frontend / Expo ---
     EXPO_PUBLIC_API_BASE: str = "http://127.0.0.1:8000"
 

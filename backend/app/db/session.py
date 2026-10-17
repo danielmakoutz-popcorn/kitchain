@@ -9,4 +9,6 @@ SessionLocal = Session
 def init_db() -> None:
     """Creates all database tables."""
     SQLModel.metadata.create_all(bind=engine)
+    from backend.app.services.nutrition import seed_nutrition
+    seed_nutrition(engine)
 

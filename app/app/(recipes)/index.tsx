@@ -46,6 +46,8 @@ export default function RecipeList() {
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
       <Link href="/(recipes)/AddFromPhoto" asChild><KitchenButton compact variant="primary" icon="scan">Add from photo</KitchenButton></Link>
       <Link href="/(recipes)/AddRecipe" asChild><KitchenButton compact variant="butter" icon="plus">Write a recipe</KitchenButton></Link>
+      <Link href="/discover" asChild><KitchenButton compact icon="search">Find something to cook</KitchenButton></Link>
+      <Link href="/public" asChild><KitchenButton compact icon="book">Public recipes</KitchenButton></Link>
     </View>
     <KitchenSearch value={query} onChangeText={setQuery} />
     <View accessibilityRole="radiogroup" style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>

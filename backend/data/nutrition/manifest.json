@@ -1,0 +1,12 @@
+{
+  "source": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_json_2018-04.zip",
+  "publisher": "USDA Agricultural Research Service, FoodData Central",
+  "release": "SR Legacy, April 2018",
+  "license": "CC0-1.0",
+  "license_reference": "https://fdc.nal.usda.gov/api-guide/#bkmk-9",
+  "records": 7793,
+  "original_zip_sha256": "0fe8ae486a2c8eb42cb96413f058deb51863a46c8fb8eeb4b1fb45006dd338ef",
+  "normalized_json_sha256": "eafa41ae5d42a2ea9128d483bd8b78a34f976ebf67758d945ee8c3e291aaa337",
+  "nutrient_basis": "per 100 g edible portion",
+  "notes": "Original descriptions, FDC IDs, five nutrient amounts and household portions. Missing nutrients remain null. Energy uses kcal, or kJ / 4.184 when kcal is absent."
+}

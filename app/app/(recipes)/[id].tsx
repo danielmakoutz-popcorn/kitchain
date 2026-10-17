@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Image, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Image, KeyboardAvoidingView, Platform, Linking } from "react-native";
 import { kitchen as c, kitchenFonts } from "@/constants/kitchen";
 import { KitchenButton, KitchenHeading, KitchenInput, KitchenNotice, KitchenScroll, KitchenText as Text, PixelFrame, PixelIcon, Flourish, useKitchenDialog } from "@/components/kitchen";
 import { feedback } from "@/lib/haptics";
 import { photoForm } from "@/lib/photos";
 import { useLocalSearchParams, router } from "expo-router";
-import { api, API_BASE as BASE, requestJson, tryParse } from "../../lib/api";
+import { api, API_BASE as BASE, discoveryApi, requestJson, tryParse } from "../../lib/api";
 import { Recipe, RecipeSchema } from "../../lib/types";
 import * as ImagePicker from "expo-image-picker";
+import { NutritionPanel } from "@/components/NutritionPanel";
+import type { Nutrition } from "@/lib/discovery-types";
 
 function listToText(value: unknown): string {
   if (Array.isArray(value)) return value.join("\n");
@@ -30,6 +32,7 @@ export default function RecipeDetail() {
 function RecipeDetailContent({ id }: { id: string }) {
   const Alert = useKitchenDialog();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
+  const [source, setSource] = useState<Nutrition["provenance"]>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -62,7 +65,10 @@ function RecipeDetailContent({ id }: { id: string }) {
 
   useEffect(() => {
     loadRecipe();
-  }, [loadRecipe]);
+    let active = true;
+    discoveryApi.recipeSource(id).then(value => { if (active) setSource(value); }).catch(() => {});
+    return () => { active = false; };
+  }, [id, loadRecipe]);
 
   async function saveEdits() {
     if (!recipe) return;
@@ -172,6 +178,19 @@ function RecipeDetailContent({ id }: { id: string }) {
     setIsEditing(false);
   }
 
+  function publishRecipe() {
+    Alert.alert("Share your recipe publicly?", "Only share recipes you created or own the rights to share. This publishes the title, ingredients and directions to the public recipe table. Your original photo and writer profile stay in the family collection.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "I own this recipe · share it", onPress: async () => {
+        if (mutationLock.current) return;
+        mutationLock.current = true; setBusy(true);
+        try { const shared = await discoveryApi.publish(id); feedback("success"); router.push(`/public/${shared.id}`); }
+        catch (e: any) { feedback("error"); Alert.alert("Could not share recipe", e.message); }
+        finally { mutationLock.current = false; setBusy(false); }
+      } },
+    ]);
+  }
+
   if (loading) return <KitchenScroll contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}><KitchenNotice title="Opening the recipe card…">Your recipe will be ready in a moment.</KitchenNotice></KitchenScroll>;
   if (error) return <KitchenScroll contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}>
     <KitchenNotice kind="error" title="Could not open this recipe">{error}</KitchenNotice>
@@ -204,6 +223,11 @@ function RecipeDetailContent({ id }: { id: string }) {
       <View style={{ alignItems: "center" }}><PixelIcon name="herb" color={c.greenShade} size={28} /></View>
       <Text accessibilityRole="header" style={{ fontFamily: kitchenFonts.heading, fontSize: 30, lineHeight: 38, fontWeight: "700", textAlign: "center" }}>{recipe.title}</Text>
       {!!recipe.description && <Text style={{ color: c.muted, textAlign: "center" }}>{recipe.description}</Text>}
+      {!!source?.source_name && <KitchenNotice title="Original recipe credit">
+        <Text>{source.source_name}{source.source_author ? ` · ${source.source_author}` : ""}</Text>
+        {!!source.source_url && <KitchenButton compact onPress={() => void Linking.openURL(source.source_url!)}>Open original recipe source</KitchenButton>}
+        {!!source.license_url && <KitchenButton compact onPress={() => void Linking.openURL(source.license_url!)}>View original recipe license</KitchenButton>}
+      </KitchenNotice>}
       <Flourish />
       {photoUri ? <View style={{ borderColor: c.border, borderWidth: 1, padding: 5, backgroundColor: c.ivory }}><Image source={{ uri: photoUri }} accessibilityLabel={`Photo of ${recipe.title}`} resizeMode="contain" style={{ width: "100%", height: 240 }} /></View> : null}
       {ingredients.length > 0 && <View style={{ gap: 10 }}>
@@ -218,6 +242,8 @@ function RecipeDetailContent({ id }: { id: string }) {
       {notes.length > 0 && <KitchenNotice title="Notes / optional add-ins">{notes.map((note, index) => <Text key={index}>{note}</Text>)}</KitchenNotice>}
       <Flourish />
     </PixelFrame>
+    <NutritionPanel key={JSON.stringify(recipe.ingredients)} recipeId={id} />
+    <KitchenButton disabled={busy} icon="book" onPress={publishRecipe}>Share my own recipe publicly</KitchenButton>
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
       <KitchenButton onPress={() => setIsEditing(true)} disabled={busy} variant="butter" icon="edit" style={{ flexGrow: 1 }}>Edit recipe</KitchenButton>
       <KitchenButton onPress={deleteRecipe} disabled={busy} variant="danger" haptic="warning" icon="delete" style={{ flexGrow: 1 }}>Delete</KitchenButton>

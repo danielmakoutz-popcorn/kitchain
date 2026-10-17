@@ -6,7 +6,9 @@ The engineering evidence includes structured API/data models, image-intake paths
 
 **Visual pass:** [warm-kitchen design](docs/KITCHEN_DESIGN.md), with live parchment frames, themed controls/dialogs and open slots for Daniel’s artwork.
 
-**Current work:** [scanner polish and upgrade review](docs/UPGRADE_REVIEW.md), including validation and remaining device checks. The [earlier validation record](docs/VALIDATION.md) is retained as historical evidence.
+**Current work:** [nutrition, recommendations and the public recipe table](docs/DISCOVERY.md): self-hosted USDA data, Tavily only when saved matches are weak, a separate local text model, source credit, cook ratings and nutrition corrections. This branch includes the kitchen design and keeps the photo scanner unchanged.
+
+The [scanner review](docs/UPGRADE_REVIEW.md) and [earlier validation record](docs/VALIDATION.md) retain the previous implementation details and checks.
 
 To try the branch and understand when to merge it, use [the PR #1 walkthrough](docs/TRY_PR.md).
 
@@ -23,6 +25,9 @@ To try the branch and understand when to merge it, use [the PR #1 walkthrough](d
 | UI feedback and art | Shared button haptics and named slots for final pixel art | [art handoff](docs/PIXEL_ART.md); physical-device verification pending |
 | Drafts and search | Local scan-review recovery, durable draft photos, search/sort | [draft store](app/lib/scan-draft-core.ts), [search](app/lib/recipe-search.ts); pure-module tests passed, device persistence pending |
 | API health | `GET /api/v1/health` | [main.py](backend/app/main.py); fixed liveness response |
+| Nutrition | Self-hosted USDA records, ingredient matching, portions, corrections and serving arithmetic | [nutrition service](backend/app/services/nutrition.py), [data provenance](backend/data/nutrition/manifest.json) |
+| Recipe discovery | Saved recipes first, limited Tavily fallback, source-page reader and separate Ollama text model | [discovery guide](docs/DISCOVERY.md); local-beta feature |
+| Public collection | Attributed source cards/full recipes where permitted, explicit family sharing and 1–5 cook ratings | [discovery routes](backend/app/api/v1/discovery.py); local profiles, not internet accounts |
 
 The client calls the API for recipe records and image intake. The API stores structured records in SQLite and images in local directories. The photo scanner asks the local `qwen2.5vl:3b` model for recipe fields and uncertain words; the UI lets a user review them. Successful AI responses now persist a scan ID, raw output, review hints, and parsed fields before returning. Reviewed corrections are stored separately; they do not automatically train or change the model.
 
@@ -85,7 +90,7 @@ npm run lint
 npm test
 ```
 
-The 16 API tests use temporary SQLite/media storage and synthetic images, mocking only the model HTTP response. They check persistence, corrections, errors, photo attachment, save retries and responsiveness. Nineteen frontend tests cover draft serialization/ordering, recipe search, asynchronous photo-copy behavior, and SDK 57 multipart photo uploads with mocked native disk access. Neither suite measures handwriting accuracy or tests physical haptic feel.
+The API tests use temporary SQLite/media storage and synthetic images/provider replies. They cover scanning, nutrition arithmetic, corrections, attribution, public boundaries, ratings, additive schema upgrades, source-reader restrictions and concurrent search-credit limits. Nineteen frontend regression tests cover drafts, recipe search and SDK 57 photo uploads. An optional browser harness checks discovery against a disposable real API/USDA database. These checks do not measure live handwriting/recommendation quality or physical haptic feel. See the [discovery guide](docs/DISCOVERY.md) for setup and validation limits.
 
 ## Operation and limitations
 

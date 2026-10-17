@@ -15,6 +15,11 @@ export const HapticPressable = forwardRef<View, Props>(function HapticPressable(
       ref={ref}
       disabled={disabled}
       accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
+      aria-checked={props["aria-checked"] ?? accessibilityState?.checked}
+      aria-selected={props["aria-selected"] ?? accessibilityState?.selected}
+      aria-expanded={props["aria-expanded"] ?? accessibilityState?.expanded}
+      aria-busy={props["aria-busy"] ?? accessibilityState?.busy}
+      aria-disabled={props["aria-disabled"] ?? !!disabled}
       style={(state) => [
         typeof style === "function" ? style(state) : style,
         (state.pressed || disabled) && { opacity: disabled ? 0.5 : 0.75 },
